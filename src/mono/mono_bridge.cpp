@@ -149,6 +149,8 @@ void* Bridge::GetStaticFieldValue(MonoClass* klass, const char* name) {
         return nullptr;
     }
 
+    AttachCurrentThread();
+
     __try {
         void* vtable = m_mono_class_vtable(m_RootDomain, klass);
         if (!vtable) return nullptr;
@@ -170,6 +172,8 @@ bool Bridge::GetStaticBool(MonoClass* klass, const char* name, bool defaultVal) 
         return defaultVal;
     }
 
+    AttachCurrentThread();
+
     __try {
         void* vtable = m_mono_class_vtable(m_RootDomain, klass);
         if (!vtable) return defaultVal;
@@ -188,6 +192,9 @@ bool Bridge::GetStaticBool(MonoClass* klass, const char* name, bool defaultVal) 
 
 MonoObject* Bridge::InvokeMethod(MonoMethod* method, void* obj, void** params, MonoObject** exc) {
     if (!method || !m_mono_runtime_invoke) return nullptr;
+
+    AttachCurrentThread();
+
     __try {
         return m_mono_runtime_invoke(method, obj, params, exc);
     }

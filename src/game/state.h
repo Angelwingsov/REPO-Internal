@@ -40,6 +40,8 @@ struct Offsets {
     int PlayerAvatar_isDisabled = 0x00C1;
     int PlayerAvatar_clientCameraPosition = 0x0130;
     int PlayerAvatar_clientCameraStateValid = 0x0158;
+    int PlayerAvatar_playerCollider = 0x00C0;
+    int PlayerAvatar_rb = 0x00A0;
     int PlayerHealth_health = 0x0028;
     int PlayerHealth_maxHealth = 0x0030;
     int PlayerHealth_godMode = 0x00C0;
@@ -48,6 +50,9 @@ struct Offsets {
     int PlayerHealth_hurtFreezeTimer = 0x00A4;
     int PlayerAvatar_fallDamageResetState = 0x0280;
     int PlayerAvatar_fallDamageResetTimer = 0x0288;
+    int PlayerAvatar_isTumbling = 0x00C2;
+    int PlayerTumble_isTumbling = 0x00A0;
+    int PlayerTumble_tumbleSetTimer = 0x00A8;
     int PlayerTumble_impactHurtTimer = 0x0098;
     int PlayerTumble_impactHurtDamage = 0x009C;
     int DebugCommandHandler_godMode = 0x0090;
@@ -74,6 +79,12 @@ struct Offsets {
     int PlayerController_antiGravityTimer = 0x0180;
     int PlayerController_featherTimer = 0x0184;
     int PlayerController_playerAvatarScript = 0x0178;
+    int PlayerController_rb = 0x00C8;
+    int PlayerController_col = 0x02A8;
+    int PlayerController_kinematicTimer = 0x02C0;
+    int PlayerController_Velocity = 0x00DC;
+    int PlayerController_VelocityImpulse = 0x00EC;
+    int PlayerController_positionPrevious = 0x01F8;
 
     int PlayerAvatar_voiceChat = 0x0060;
     int PlayerAvatar_tumble = 0x0068;

@@ -211,6 +211,7 @@
     <ClCompile Include="src\core\logger.cpp" />
     <ClCompile Include="src\features\esp.cpp" />
     <ClCompile Include="src\features\godmode.cpp" />
+    <ClCompile Include="src\features\noclip.cpp" />
     <ClCompile Include="src\features\player.cpp" />
     <ClCompile Include="src\features\thirdperson.cpp" />
     <ClCompile Include="src\features\spectatorlist.cpp" />
@@ -243,6 +244,7 @@
     <ClInclude Include="src\core\logger.h" />
     <ClInclude Include="src\features\esp.h" />
     <ClInclude Include="src\features\godmode.h" />
+    <ClInclude Include="src\features\noclip.h" />
     <ClInclude Include="src\features\player.h" />
     <ClInclude Include="src\features\thirdperson.h" />
     <ClInclude Include="src\features\spectatorlist.h" />

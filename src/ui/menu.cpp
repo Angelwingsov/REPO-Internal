@@ -153,6 +153,33 @@ void Menu::Render() {
         }
 
         if (ImGui::CollapsingHeader("Movement", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::SeparatorText("NoClip");
+            ImGui::Checkbox("Enable NoClip", &cfg.noclip.enabled);
+
+            if (cfg.noclip.enabled) {
+                static bool s_BindingNoClipKey = false;
+                static bool s_WaitReleaseNoClip = false;
+                DrawKeybindWidget("NoClip", cfg.noclip.toggleKey, s_BindingNoClipKey, s_WaitReleaseNoClip, 140.0f);
+
+                ImGui::SameLine();
+                ImGui::RadioButton("Hold##NC", &cfg.noclip.keyMode, 0);
+                ImGui::SameLine();
+                ImGui::RadioButton("Toggle##NC", &cfg.noclip.keyMode, 1);
+
+                ImGui::SameLine();
+                if (cfg.noclip.active) {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[ACTIVE]");
+                } else {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[IDLE]");
+                }
+
+                ImGui::SliderFloat("Flight Speed", &cfg.noclip.speed, 2.0f, 60.0f, "%.1f m/s");
+                ImGui::SliderFloat("Sprint Multiplier", &cfg.noclip.sprintMultiplier, 1.0f, 5.0f, "%.1fx");
+                ImGui::Checkbox("Through Walls", &cfg.noclip.disableColliders);
+                ImGui::Checkbox("Freeze When Idle", &cfg.noclip.freezeWhenIdle);
+            }
+
+            ImGui::Spacing();
             ImGui::SeparatorText("Speedhack");
             ImGui::Checkbox("Enable Speedhack", &cfg.movement.speedEnabled);
 

@@ -17,3 +17,4 @@ An internal cheat for **R.E.P.O** (DirectX 11, x64).
 | `F` | Third Person |
 | `V` | Speedhack |
 | `G` | God Mode |
+| `N` | NoClip |

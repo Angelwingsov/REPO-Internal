@@ -97,6 +97,19 @@ struct MovementConfig {
     bool noTumble = true;
 };
 
+struct NoClipConfig {
+    bool enabled = false;
+    int toggleKey = 'N';
+    int keyMode = 1;
+    bool active = false;
+
+    float speed = 15.0f;
+    float sprintMultiplier = 2.5f;
+    bool freezeWhenIdle = true;
+    bool disableColliders = true;
+    bool verticalFollowCam = true;
+};
+
 struct ThirdPersonConfig {
     bool enabled = true;
     int toggleKey = 'F';
@@ -170,6 +183,7 @@ public:
     ValuableConfig valuable;
     ItemConfig item;
     MovementConfig movement;
+    NoClipConfig noclip;
     GodModeConfig godMode;
     ThirdPersonConfig thirdPerson;
     SpectatorListConfig spectatorList;

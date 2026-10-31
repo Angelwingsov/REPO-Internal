@@ -40,12 +40,24 @@ public:
     bool GetLightEnabled(MonoObject* light);
 
     Vector3 GetTransformPosition(MonoObject* transformObj);
+    void SetTransformPosition(MonoObject* transformObj, const Vector3& pos);
     Vector3 GetTransformForward(MonoObject* transformObj);
     Vector3 GetTransformRight(MonoObject* transformObj);
     Vector3 GetTransformUp(MonoObject* transformObj);
     MonoObject* GetTransform(MonoObject* componentObj);
     Vector3 GetComponentPosition(MonoObject* componentObj);
     std::string GetObjectName(MonoObject* obj);
+
+    void SetRigidbodyPosition(MonoObject* rbObj, const Vector3& pos);
+    void SetRigidbodyVelocity(MonoObject* rbObj, const Vector3& vel);
+    void SetRigidbodyIsKinematic(MonoObject* rbObj, bool kinematic);
+    bool GetRigidbodyIsKinematic(MonoObject* rbObj);
+    void SetRigidbodyDetectCollisions(MonoObject* rbObj, bool detect);
+
+    void SetColliderEnabled(MonoObject* colObj, bool enabled);
+    bool GetColliderEnabled(MonoObject* colObj);
+    void SetColliderIsTrigger(MonoObject* colObj, bool isTrigger);
+    bool GetColliderIsTrigger(MonoObject* colObj);
 
     bool Linecast(const Vector3& start, const Vector3& end, Vector3& outHitPoint);
 
@@ -73,6 +85,8 @@ private:
     MonoClass* m_klassLight = nullptr;
     MonoClass* m_klassBehaviour = nullptr;
     MonoClass* m_klassPhysics = nullptr;
+    MonoClass* m_klassRigidbody = nullptr;
+    MonoClass* m_klassCollider = nullptr;
 
     MonoMethod* m_methodGetMainCamera = nullptr;
     MonoMethod* m_methodWorldToScreen = nullptr;
@@ -80,6 +94,7 @@ private:
     MonoMethod* m_methodGetPixelHeight = nullptr;
     MonoMethod* m_methodGetTransform = nullptr;
     MonoMethod* m_methodGetPosition = nullptr;
+    MonoMethod* m_methodSetPosition = nullptr;
     MonoMethod* m_methodGetForward = nullptr;
     MonoMethod* m_methodGetRight = nullptr;
     MonoMethod* m_methodGetUp = nullptr;
@@ -89,6 +104,16 @@ private:
     MonoMethod* m_methodGetCursorVisible = nullptr;
     MonoMethod* m_methodSetCursorLockState = nullptr;
     MonoMethod* m_methodGetCursorLockState = nullptr;
+
+    MonoMethod* m_methodRigidbodySetPosition = nullptr;
+    MonoMethod* m_methodRigidbodySetVelocity = nullptr;
+    MonoMethod* m_methodRigidbodySetIsKinematic = nullptr;
+    MonoMethod* m_methodRigidbodyGetIsKinematic = nullptr;
+    MonoMethod* m_methodRigidbodySetDetectCollisions = nullptr;
+    MonoMethod* m_methodColliderSetEnabled = nullptr;
+    MonoMethod* m_methodColliderGetEnabled = nullptr;
+    MonoMethod* m_methodColliderSetIsTrigger = nullptr;
+    MonoMethod* m_methodColliderGetIsTrigger = nullptr;
 
     MonoMethod* m_methodSetAmbientLight = nullptr;
     MonoMethod* m_methodGetAmbientLight = nullptr;

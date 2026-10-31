@@ -22,7 +22,7 @@ bool Engine::IsValidUnityObject(void* obj) {
     constexpr size_t cachedPtrOffset = sizeof(void*) * 2;
     uintptr_t cachedNativePtr = 0;
     if (Memory::ReadPtr(reinterpret_cast<uintptr_t>(obj) + cachedPtrOffset, cachedNativePtr)) {
-        if (cachedNativePtr == 0) {
+        if (cachedNativePtr == 0 || !Memory::IsValidAddress(cachedNativePtr)) {
             return false;
         }
     }
@@ -54,10 +54,12 @@ bool Engine::Initialize() {
     m_klassTransform = bridge.FindClass(coreImage, "UnityEngine", "Transform");
     if (m_klassTransform) {
         m_methodGetPosition = bridge.FindMethod(m_klassTransform, "get_position", 0);
+        m_methodSetPosition = bridge.FindMethod(m_klassTransform, "set_position", 1);
         m_methodGetForward = bridge.FindMethod(m_klassTransform, "get_forward", 0);
         m_methodGetRight = bridge.FindMethod(m_klassTransform, "get_right", 0);
         m_methodGetUp = bridge.FindMethod(m_klassTransform, "get_up", 0);
-        LOG_OK("UnityEngine.Transform resolved (get_position: %p, get_forward: %p)", m_methodGetPosition, m_methodGetForward);
+        LOG_OK("UnityEngine.Transform resolved (get_position: %p, set_position: %p, get_forward: %p)",
+               m_methodGetPosition, m_methodSetPosition, m_methodGetForward);
     }
 
     m_klassObject = bridge.FindClass(coreImage, "UnityEngine", "Object");
@@ -121,6 +123,30 @@ bool Engine::Initialize() {
             }
             LOG_OK("UnityEngine.Physics resolved (Linecast: %p)", m_methodLinecast);
         }
+
+        m_klassRigidbody = bridge.FindClass(physImage, "UnityEngine", "Rigidbody");
+        if (m_klassRigidbody) {
+            m_methodRigidbodySetPosition = bridge.FindMethod(m_klassRigidbody, "set_position", 1);
+            m_methodRigidbodySetVelocity = bridge.FindMethod(m_klassRigidbody, "set_velocity", 1);
+            if (!m_methodRigidbodySetVelocity) {
+                m_methodRigidbodySetVelocity = bridge.FindMethod(m_klassRigidbody, "set_linearVelocity", 1);
+            }
+            m_methodRigidbodySetIsKinematic = bridge.FindMethod(m_klassRigidbody, "set_isKinematic", 1);
+            m_methodRigidbodyGetIsKinematic = bridge.FindMethod(m_klassRigidbody, "get_isKinematic", 0);
+            m_methodRigidbodySetDetectCollisions = bridge.FindMethod(m_klassRigidbody, "set_detectCollisions", 1);
+            LOG_OK("UnityEngine.Rigidbody resolved (set_position: %p, set_isKinematic: %p, get_isKinematic: %p)",
+                   m_methodRigidbodySetPosition, m_methodRigidbodySetIsKinematic, m_methodRigidbodyGetIsKinematic);
+        }
+
+        m_klassCollider = bridge.FindClass(physImage, "UnityEngine", "Collider");
+        if (m_klassCollider) {
+            m_methodColliderSetEnabled = bridge.FindMethod(m_klassCollider, "set_enabled", 1);
+            m_methodColliderGetEnabled = bridge.FindMethod(m_klassCollider, "get_enabled", 0);
+            m_methodColliderSetIsTrigger = bridge.FindMethod(m_klassCollider, "set_isTrigger", 1);
+            m_methodColliderGetIsTrigger = bridge.FindMethod(m_klassCollider, "get_isTrigger", 0);
+            LOG_OK("UnityEngine.Collider resolved (set_enabled: %p, set_isTrigger: %p)",
+                   m_methodColliderSetEnabled, m_methodColliderSetIsTrigger);
+        }
     }
 
     m_Initialized = (m_klassCamera != nullptr && m_methodWorldToScreen != nullptr && m_klassTransform != nullptr);
@@ -183,6 +209,121 @@ Vector3 Engine::GetTransformPosition(MonoObject* transformObj) {
         return pos;
     }
     return Vector3{};
+}
+
+void Engine::SetTransformPosition(MonoObject* transformObj, const Vector3& pos) {
+    if (!transformObj || !m_methodSetPosition || !IsValidUnityObject(transformObj)) {
+        return;
+    }
+    Vector3 p = pos;
+    void* args[1] = { &p };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodSetPosition, transformObj, args, &exc);
+}
+
+void Engine::SetRigidbodyPosition(MonoObject* rbObj, const Vector3& pos) {
+    if (!rbObj || !m_methodRigidbodySetPosition || !IsValidUnityObject(rbObj)) {
+        return;
+    }
+    Vector3 p = pos;
+    void* args[1] = { &p };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodRigidbodySetPosition, rbObj, args, &exc);
+}
+
+void Engine::SetRigidbodyVelocity(MonoObject* rbObj, const Vector3& vel) {
+    if (!rbObj || !m_methodRigidbodySetVelocity || !IsValidUnityObject(rbObj)) {
+        return;
+    }
+    if (GetRigidbodyIsKinematic(rbObj)) {
+        return;
+    }
+    Vector3 v = vel;
+    void* args[1] = { &v };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodRigidbodySetVelocity, rbObj, args, &exc);
+}
+
+void Engine::SetRigidbodyIsKinematic(MonoObject* rbObj, bool kinematic) {
+    if (!rbObj || !m_methodRigidbodySetIsKinematic || !IsValidUnityObject(rbObj)) {
+        return;
+    }
+    int val = kinematic ? 1 : 0;
+    void* args[1] = { &val };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodRigidbodySetIsKinematic, rbObj, args, &exc);
+}
+
+bool Engine::GetRigidbodyIsKinematic(MonoObject* rbObj) {
+    if (!rbObj || !m_methodRigidbodyGetIsKinematic || !IsValidUnityObject(rbObj)) {
+        return false;
+    }
+    MonoObject* exc = nullptr;
+    MonoObject* res = Mono::Bridge::Get().InvokeMethod(m_methodRigidbodyGetIsKinematic, rbObj, nullptr, &exc);
+    if (!res || exc) return false;
+    bool val = false;
+    if (Mono::Bridge::Get().Unbox(res, val)) {
+        return val;
+    }
+    return false;
+}
+
+void Engine::SetRigidbodyDetectCollisions(MonoObject* rbObj, bool detect) {
+    if (!rbObj || !m_methodRigidbodySetDetectCollisions || !IsValidUnityObject(rbObj)) {
+        return;
+    }
+    int val = detect ? 1 : 0;
+    void* args[1] = { &val };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodRigidbodySetDetectCollisions, rbObj, args, &exc);
+}
+
+void Engine::SetColliderEnabled(MonoObject* colObj, bool enabled) {
+    if (!colObj || !m_methodColliderSetEnabled || !IsValidUnityObject(colObj)) {
+        return;
+    }
+    int val = enabled ? 1 : 0;
+    void* args[1] = { &val };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodColliderSetEnabled, colObj, args, &exc);
+}
+
+bool Engine::GetColliderEnabled(MonoObject* colObj) {
+    if (!colObj || !m_methodColliderGetEnabled || !IsValidUnityObject(colObj)) {
+        return false;
+    }
+    MonoObject* exc = nullptr;
+    MonoObject* res = Mono::Bridge::Get().InvokeMethod(m_methodColliderGetEnabled, colObj, nullptr, &exc);
+    if (!res || exc) return false;
+    bool enabled = false;
+    if (Mono::Bridge::Get().Unbox(res, enabled)) {
+        return enabled;
+    }
+    return false;
+}
+
+void Engine::SetColliderIsTrigger(MonoObject* colObj, bool isTrigger) {
+    if (!colObj || !m_methodColliderSetIsTrigger || !IsValidUnityObject(colObj)) {
+        return;
+    }
+    int val = isTrigger ? 1 : 0;
+    void* args[1] = { &val };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodColliderSetIsTrigger, colObj, args, &exc);
+}
+
+bool Engine::GetColliderIsTrigger(MonoObject* colObj) {
+    if (!colObj || !m_methodColliderGetIsTrigger || !IsValidUnityObject(colObj)) {
+        return false;
+    }
+    MonoObject* exc = nullptr;
+    MonoObject* res = Mono::Bridge::Get().InvokeMethod(m_methodColliderGetIsTrigger, colObj, nullptr, &exc);
+    if (!res || exc) return false;
+    bool val = false;
+    if (Mono::Bridge::Get().Unbox(res, val)) {
+        return val;
+    }
+    return false;
 }
 
 Vector3 Engine::GetTransformForward(MonoObject* transformObj) {

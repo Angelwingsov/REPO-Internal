@@ -60,6 +60,9 @@
     <ClCompile Include="src\features\godmode.cpp">
       <Filter>src\features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\noclip.cpp">
+      <Filter>src\features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\player.cpp">
       <Filter>src\features</Filter>
     </ClCompile>
@@ -144,6 +147,9 @@
       <Filter>src\features</Filter>
     </ClInclude>
     <ClInclude Include="src\features\godmode.h">
+      <Filter>src\features</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\noclip.h">
       <Filter>src\features</Filter>
     </ClInclude>
     <ClInclude Include="src\features\player.h">

@@ -7,6 +7,7 @@
 #include "game/state.h"
 #include "features/esp.h"
 #include "features/godmode.h"
+#include "features/noclip.h"
 #include "features/player.h"
 #include "features/thirdperson.h"
 #include "features/spectatorlist.h"
@@ -114,6 +115,7 @@ HRESULT __stdcall DX11Hook::PresentHook(IDXGISwapChain* pSwapChain, UINT SyncInt
     if (s_SubsystemsInitialized) {
         __try {
             Features::GodMode::Get().Update();
+            Features::NoClip::Get().Update();
             Features::PlayerMods::Get().Update();
             Features::ThirdPerson::Get().Update();
             Features::SpectatorList::Get().Update();

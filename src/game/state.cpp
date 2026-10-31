@@ -52,6 +52,8 @@ void GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPlayerAvatar, "isDisabled", offsets.PlayerAvatar_isDisabled, 0x00C1);
     RESOLVE_FIELD(klassPlayerAvatar, "clientCameraPosition", offsets.PlayerAvatar_clientCameraPosition, 0x0130);
     RESOLVE_FIELD(klassPlayerAvatar, "clientCameraStateValid", offsets.PlayerAvatar_clientCameraStateValid, 0x0158);
+    RESOLVE_FIELD(klassPlayerAvatar, "playerCollider", offsets.PlayerAvatar_playerCollider, 0x00C0);
+    RESOLVE_FIELD(klassPlayerAvatar, "rb", offsets.PlayerAvatar_rb, 0x00A0);
     RESOLVE_FIELD(klassPlayerHealth, "health", offsets.PlayerHealth_health, 0x0028);
     RESOLVE_FIELD(klassPlayerHealth, "maxHealth", offsets.PlayerHealth_maxHealth, 0x0030);
     RESOLVE_FIELD(klassPlayerHealth, "godMode", offsets.PlayerHealth_godMode, 0x00C0);
@@ -60,6 +62,9 @@ void GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPlayerHealth, "hurtFreezeTimer", offsets.PlayerHealth_hurtFreezeTimer, 0x00A4);
     RESOLVE_FIELD(klassPlayerAvatar, "fallDamageResetState", offsets.PlayerAvatar_fallDamageResetState, 0x0280);
     RESOLVE_FIELD(klassPlayerAvatar, "fallDamageResetTimer", offsets.PlayerAvatar_fallDamageResetTimer, 0x0288);
+    RESOLVE_FIELD(klassPlayerAvatar, "isTumbling", offsets.PlayerAvatar_isTumbling, 0x00C2);
+    RESOLVE_FIELD(klassPlayerTumble, "isTumbling", offsets.PlayerTumble_isTumbling, 0x00A0);
+    RESOLVE_FIELD(klassPlayerTumble, "tumbleSetTimer", offsets.PlayerTumble_tumbleSetTimer, 0x00A8);
     RESOLVE_FIELD(klassPlayerTumble, "impactHurtTimer", offsets.PlayerTumble_impactHurtTimer, 0x0098);
     RESOLVE_FIELD(klassPlayerTumble, "impactHurtDamage", offsets.PlayerTumble_impactHurtDamage, 0x009C);
     RESOLVE_FIELD(klassDebugCommandHandler, "godMode", offsets.DebugCommandHandler_godMode, 0x0090);
@@ -90,6 +95,12 @@ void GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPlayerController, "antiGravityTimer", offsets.PlayerController_antiGravityTimer, 0x0180);
     RESOLVE_FIELD(klassPlayerController, "featherTimer", offsets.PlayerController_featherTimer, 0x0184);
     RESOLVE_FIELD(klassPlayerController, "playerAvatarScript", offsets.PlayerController_playerAvatarScript, 0x0178);
+    RESOLVE_FIELD(klassPlayerController, "rb", offsets.PlayerController_rb, 0x00C8);
+    RESOLVE_FIELD(klassPlayerController, "col", offsets.PlayerController_col, 0x02A8);
+    RESOLVE_FIELD(klassPlayerController, "kinematicTimer", offsets.PlayerController_kinematicTimer, 0x02C0);
+    RESOLVE_FIELD(klassPlayerController, "Velocity", offsets.PlayerController_Velocity, 0x00DC);
+    RESOLVE_FIELD(klassPlayerController, "VelocityImpulse", offsets.PlayerController_VelocityImpulse, 0x00EC);
+    RESOLVE_FIELD(klassPlayerController, "positionPrevious", offsets.PlayerController_positionPrevious, 0x01F8);
 
     RESOLVE_FIELD(klassPhysGrabber, "grabStrength", offsets.PhysGrabber_grabStrength, 0x01C8);
     RESOLVE_FIELD(klassPhysGrabber, "throwStrength", offsets.PhysGrabber_throwStrength, 0x01CC);

@@ -13,6 +13,7 @@ void Config::ResetToDefaults() {
     valuable = ValuableConfig();
     item = ItemConfig();
     movement = MovementConfig();
+    noclip = NoClipConfig();
     godMode = GodModeConfig();
     thirdPerson = ThirdPersonConfig();
     spectatorList = SpectatorListConfig();
