@@ -34,8 +34,10 @@ private:
 
     bool m_StrengthSaved = false;
     float m_OriginalGrabStrength = 1.0f;
+    float m_OriginalThrowStrength = 0.0f;
     float m_OriginalForceMax = 4.0f;
     float m_OriginalClimbForceMultiplier = 1.0f;
+    uintptr_t m_LastGrabbedObject = 0;
 
     bool m_JumpForceSaved = false;
     float m_OriginalJumpForce = 8.0f;

@@ -66,6 +66,7 @@ void PlayerMods::Update() {
     if (!gameState.IsReady() || gameState.IsMapLoadingOrRestarting()) {
         m_LastPhysGrabber = 0;
         m_LastPlayerCtrl = 0;
+        m_LastGrabbedObject = 0;
         m_GrabRangeSaved = false;
         m_StrengthSaved = false;
         m_JumpForceSaved = false;
@@ -214,16 +215,13 @@ void PlayerMods::Update() {
                 m_LastPhysGrabber = physGrabber;
                 m_GrabRangeSaved = false;
                 m_StrengthSaved = false;
-            }
-
-            float currentThrowStr = 0.0f;
-            if (Memory::ReadFloat(physGrabber + gameState.offsets.PhysGrabber_throwStrength, currentThrowStr) && currentThrowStr > 3.0f) {
-                Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_throwStrength, 0.0f);
+                m_LastGrabbedObject = 0;
             }
 
             if (cfg.movement.infiniteStrength) {
                 if (!m_StrengthSaved) {
                     Memory::ReadFloat(physGrabber + gameState.offsets.PhysGrabber_grabStrength, m_OriginalGrabStrength);
+                    Memory::ReadFloat(physGrabber + gameState.offsets.PhysGrabber_throwStrength, m_OriginalThrowStrength);
                     Memory::ReadFloat(physGrabber + gameState.offsets.PhysGrabber_forceMax, m_OriginalForceMax);
                     Memory::ReadFloat(physGrabber + gameState.offsets.PhysGrabber_climbForceMultiplier, m_OriginalClimbForceMultiplier);
 
@@ -236,27 +234,45 @@ void PlayerMods::Update() {
 
                 float str = cfg.movement.strengthMultiplier;
                 Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_grabStrength, str);
-                Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_forceMax, m_OriginalForceMax);
+
+                float targetForceMax = m_OriginalForceMax * (1.0f + str * 0.15f);
+                if (targetForceMax > 50.0f) targetForceMax = 50.0f;
+                Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_forceMax, targetForceMax);
+
                 Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_climbForceMultiplier, 5.0f);
                 Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_overrideGrabStrength, str);
                 Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_overrideGrabStrengthTimer, 0.25f);
+                Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_throwStrength, m_OriginalThrowStrength + str * 0.1f);
 
                 uintptr_t grabbedObj = 0;
                 if (Memory::Read<uintptr_t>(physGrabber + gameState.offsets.PhysGrabber_grabbedPhysGrabObject, grabbedObj) && grabbedObj) {
                     Memory::WriteFloat(grabbedObj + gameState.offsets.PhysGrabObject_overrideGrabStrength, str);
                     Memory::WriteFloat(grabbedObj + gameState.offsets.PhysGrabObject_overrideGrabStrengthTimer, 0.25f);
-                    float timerAlterMass = 0.0f;
-                    if (Memory::ReadFloat(grabbedObj + gameState.offsets.PhysGrabObject_timerAlterMass, timerAlterMass) && timerAlterMass > 0.0f) {
-                        Memory::WriteFloat(grabbedObj + gameState.offsets.PhysGrabObject_timerAlterMass, 0.0f);
-                    }
+                    Memory::WriteFloat(grabbedObj + gameState.offsets.PhysGrabObject_alterMassValue, 0.2f);
+                    Memory::WriteFloat(grabbedObj + gameState.offsets.PhysGrabObject_timerAlterMass, 0.25f);
                 }
+
+                if (m_LastGrabbedObject && m_LastGrabbedObject != grabbedObj) {
+                    Memory::WriteFloat(m_LastGrabbedObject + gameState.offsets.PhysGrabObject_timerAlterMass, 0.0f);
+                    Memory::WriteFloat(m_LastGrabbedObject + gameState.offsets.PhysGrabObject_overrideGrabStrength, -1.0f);
+                    Memory::WriteFloat(m_LastGrabbedObject + gameState.offsets.PhysGrabObject_overrideGrabStrengthTimer, 0.0f);
+                }
+                m_LastGrabbedObject = grabbedObj;
             } else {
                 if (m_StrengthSaved) {
                     Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_grabStrength, m_OriginalGrabStrength);
+                    Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_throwStrength, m_OriginalThrowStrength);
                     Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_forceMax, m_OriginalForceMax);
                     Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_climbForceMultiplier, m_OriginalClimbForceMultiplier);
                     Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_overrideGrabStrength, -1.0f);
                     Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_overrideGrabStrengthTimer, 0.0f);
+
+                    if (m_LastGrabbedObject) {
+                        Memory::WriteFloat(m_LastGrabbedObject + gameState.offsets.PhysGrabObject_timerAlterMass, 0.0f);
+                        Memory::WriteFloat(m_LastGrabbedObject + gameState.offsets.PhysGrabObject_overrideGrabStrength, -1.0f);
+                        Memory::WriteFloat(m_LastGrabbedObject + gameState.offsets.PhysGrabObject_overrideGrabStrengthTimer, 0.0f);
+                        m_LastGrabbedObject = 0;
+                    }
                     m_StrengthSaved = false;
                 }
             }
