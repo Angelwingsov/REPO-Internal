@@ -57,6 +57,9 @@
     <ClCompile Include="src\features\esp.cpp">
       <Filter>src\features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\godmode.cpp">
+      <Filter>src\features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\player.cpp">
       <Filter>src\features</Filter>
     </ClCompile>
@@ -138,6 +141,9 @@
       <Filter>src\core</Filter>
     </ClInclude>
     <ClInclude Include="src\features\esp.h">
+      <Filter>src\features</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\godmode.h">
       <Filter>src\features</Filter>
     </ClInclude>
     <ClInclude Include="src\features\player.h">

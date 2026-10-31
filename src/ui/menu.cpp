@@ -4,8 +4,102 @@
 #include "mono/mono_bridge.h"
 #include "game/state.h"
 #include "features/player.h"
+#include "features/godmode.h"
+#include "hook/input.h"
 
 namespace UI {
+
+static void DrawKeybindWidget(const char* label, int& key, bool& isBinding, bool& waitRelease, float width = 140.0f) {
+    char btnText[64];
+    if (isBinding) {
+        strcpy_s(btnText, "[ Press Key/Wheel... ]");
+
+        ImGuiIO& io = ImGui::GetIO();
+        if (waitRelease) {
+            if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
+                waitRelease = false;
+            }
+        } else {
+            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+                isBinding = false;
+            }
+            else if (io.MouseWheel > 0.1f || Hook::InputHook::ConsumeWheelUp()) {
+                key = VK_MWHEELUP;
+                isBinding = false;
+                io.MouseWheel = 0.0f;
+            }
+            else if (io.MouseWheel < -0.1f || Hook::InputHook::ConsumeWheelDown()) {
+                key = VK_MWHEELDOWN;
+                isBinding = false;
+                io.MouseWheel = 0.0f;
+            }
+
+            else if (GetAsyncKeyState(VK_MBUTTON) & 0x8000) {
+                key = VK_MBUTTON;
+                isBinding = false;
+            }
+
+            else if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
+                key = VK_RBUTTON;
+                isBinding = false;
+            }
+            else if (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) {
+                key = VK_XBUTTON1;
+                isBinding = false;
+            }
+            else if (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) {
+                key = VK_XBUTTON2;
+                isBinding = false;
+            }
+            else {
+
+                for (int k = VK_BACK; k <= 0xFE; ++k) {
+                    if (k == VK_ESCAPE || k == VK_MWHEELUP || k == VK_MWHEELDOWN) continue;
+                    if (GetAsyncKeyState(k) & 0x8000) {
+                        key = k;
+                        isBinding = false;
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        sprintf_s(btnText, "Key: [ %s ]##%s", Features::PlayerMods::GetKeyName(key), label);
+    }
+
+    if (ImGui::Button(btnText, ImVec2(width, 24))) {
+        isBinding = !isBinding;
+        waitRelease = isBinding;
+    }
+
+
+    char popupId[64];
+    sprintf_s(popupId, "Context##%s", label);
+    if (ImGui::BeginPopupContextItem(popupId)) {
+        ImGui::TextDisabled("Quick Wheel Binds:");
+        if (ImGui::Selectable("MWheelDown (Scroll Down)")) {
+            key = VK_MWHEELDOWN;
+            isBinding = false;
+        }
+        if (ImGui::Selectable("MWheelUp (Scroll Up)")) {
+            key = VK_MWHEELUP;
+            isBinding = false;
+        }
+        if (ImGui::Selectable("M3 (Wheel Click)")) {
+            key = VK_MBUTTON;
+            isBinding = false;
+        }
+        ImGui::Separator();
+        if (ImGui::Selectable("Clear / None")) {
+            key = 0;
+            isBinding = false;
+        }
+        ImGui::EndPopup();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Left-click: press any key or scroll / click mouse wheel\nRight-click: quick wheel bind menu\nESC: cancel");
+    }
+}
 
 Menu& Menu::Get() {
     static Menu instance;
@@ -19,6 +113,45 @@ void Menu::Render() {
     ImGui::SetNextWindowSize(ImVec2(460, 620), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("R.E.P.O Internal [DEL / INS]", &cfg.menu.isVisible)) {
+        if (ImGui::CollapsingHeader("God Mode (Invulnerability)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox("Enable God Mode", &cfg.godMode.enabled);
+
+            if (cfg.godMode.enabled) {
+                static bool s_BindingGodKey = false;
+                static bool s_WaitReleaseGod = false;
+                DrawKeybindWidget("GodMode", cfg.godMode.toggleKey, s_BindingGodKey, s_WaitReleaseGod, 140.0f);
+
+                ImGui::SameLine();
+                ImGui::RadioButton("Hold##God", &cfg.godMode.keyMode, 0);
+                ImGui::SameLine();
+                ImGui::RadioButton("Toggle##God", &cfg.godMode.keyMode, 1);
+
+                ImGui::SameLine();
+                if (cfg.godMode.active) {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[ACTIVE]");
+                } else {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[IDLE]");
+                }
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("Protection Options");
+                ImGui::Checkbox("Invulnerability (Block All Damage)", &cfg.godMode.preventDeath);
+                ImGui::Checkbox("Infinite Health (Auto Heal to 100%)", &cfg.godMode.healToMax);
+                ImGui::Checkbox("Immunity to Fall Damage", &cfg.godMode.noFallDamage);
+                ImGui::Checkbox("Auto Revive on Death", &cfg.godMode.autoRevive);
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("Actions");
+                if (ImGui::Button("Instant Full Heal", ImVec2(150, 24))) {
+                    Features::GodMode::Get().HealLocalPlayer();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Revive Self (If Dead)", ImVec2(160, 24))) {
+                    Features::GodMode::Get().ReviveLocalPlayer();
+                }
+            }
+        }
+
         if (ImGui::CollapsingHeader("Movement", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::SeparatorText("Speedhack");
             ImGui::Checkbox("Enable Speedhack", &cfg.movement.speedEnabled);
@@ -28,35 +161,8 @@ void Menu::Render() {
 
                 if (!cfg.movement.speedAlwaysOn) {
                     static bool s_BindingSpeedKey = false;
-                    static bool s_WaitRelease = false;
-                    char keyBtnText[64];
-                    if (s_BindingSpeedKey) {
-                        strcpy_s(keyBtnText, "[ Press Any Key... ]");
-                        if (s_WaitRelease) {
-                            if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
-                                s_WaitRelease = false;
-                            }
-                        } else {
-                            for (int k = 1; k < 255; ++k) {
-                                if (k == VK_ESCAPE) {
-                                    s_BindingSpeedKey = false;
-                                    break;
-                                }
-                                if (GetAsyncKeyState(k) & 0x8000) {
-                                    cfg.movement.speedKey = k;
-                                    s_BindingSpeedKey = false;
-                                    break;
-                                }
-                            }
-                        }
-                    } else {
-                        sprintf_s(keyBtnText, "Key: [ %s ]##Speed", Features::PlayerMods::GetKeyName(cfg.movement.speedKey));
-                    }
-
-                    if (ImGui::Button(keyBtnText, ImVec2(130, 24))) {
-                        s_BindingSpeedKey = true;
-                        s_WaitRelease = true;
-                    }
+                    static bool s_WaitReleaseSpeed = false;
+                    DrawKeybindWidget("Speed", cfg.movement.speedKey, s_BindingSpeedKey, s_WaitReleaseSpeed, 140.0f);
 
                     ImGui::SameLine();
                     ImGui::RadioButton("Hold", &cfg.movement.speedKeyMode, 0);
@@ -106,34 +212,7 @@ void Menu::Render() {
             if (cfg.thirdPerson.enabled) {
                 static bool s_BindingTPKey = false;
                 static bool s_WaitReleaseTP = false;
-                char tpKeyBtnText[64];
-                if (s_BindingTPKey) {
-                    strcpy_s(tpKeyBtnText, "[ Press Any Key... ]##TP");
-                    if (s_WaitReleaseTP) {
-                        if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
-                            s_WaitReleaseTP = false;
-                        }
-                    } else {
-                        for (int k = 1; k < 255; ++k) {
-                            if (k == VK_ESCAPE) {
-                                s_BindingTPKey = false;
-                                break;
-                            }
-                            if (GetAsyncKeyState(k) & 0x8000) {
-                                cfg.thirdPerson.toggleKey = k;
-                                s_BindingTPKey = false;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    sprintf_s(tpKeyBtnText, "Key: [ %s ]##ThirdPerson", Features::PlayerMods::GetKeyName(cfg.thirdPerson.toggleKey));
-                }
-
-                if (ImGui::Button(tpKeyBtnText, ImVec2(130, 24))) {
-                    s_BindingTPKey = true;
-                    s_WaitReleaseTP = true;
-                }
+                DrawKeybindWidget("ThirdPerson", cfg.thirdPerson.toggleKey, s_BindingTPKey, s_WaitReleaseTP, 140.0f);
 
                 ImGui::SameLine();
                 ImGui::RadioButton("Hold##TP", &cfg.thirdPerson.keyMode, 0);
@@ -389,13 +468,25 @@ void Menu::Render() {
             ImGui::SeparatorText("Keybinds");
             ImGui::Text("Menu Toggle Key:");
             ImGui::SameLine();
-            const char* keyNames[] = { "DELETE", "INSERT", "F11" };
-            int currentKeyIdx = (cfg.menu.toggleKey == VK_INSERT) ? 1 : (cfg.menu.toggleKey == VK_F11 ? 2 : 0);
-            if (ImGui::Combo("##ToggleKey", &currentKeyIdx, keyNames, IM_ARRAYSIZE(keyNames))) {
-                if (currentKeyIdx == 0) cfg.menu.toggleKey = VK_DELETE;
-                else if (currentKeyIdx == 1) cfg.menu.toggleKey = VK_INSERT;
-                else if (currentKeyIdx == 2) cfg.menu.toggleKey = VK_F11;
+
+            static bool s_BindingMenuKey = false;
+            static bool s_WaitReleaseMenu = false;
+            int menuKey = static_cast<int>(cfg.menu.toggleKey);
+            DrawKeybindWidget("MenuToggle", menuKey, s_BindingMenuKey, s_WaitReleaseMenu, 140.0f);
+            cfg.menu.toggleKey = static_cast<DWORD>(menuKey);
+
+            ImGui::SameLine();
+            if (ImGui::Button("DEL##ResetMenuKey", ImVec2(40, 24))) {
+                cfg.menu.toggleKey = VK_DELETE;
+                s_BindingMenuKey = false;
             }
+            ImGui::SameLine();
+            if (ImGui::Button("INS##ResetMenuKey", ImVec2(40, 24))) {
+                cfg.menu.toggleKey = VK_INSERT;
+                s_BindingMenuKey = false;
+            }
+
+            ImGui::TextDisabled("Note: DELETE and INSERT will always toggle the menu as safe fallbacks.");
 
             ImGui::Spacing();
             ImGui::SeparatorText("Unload");

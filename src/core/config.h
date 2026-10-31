@@ -2,6 +2,13 @@
 #include <windows.h>
 #include <cstdint>
 
+#ifndef VK_MWHEELUP
+#define VK_MWHEELUP   0x0E
+#endif
+#ifndef VK_MWHEELDOWN
+#define VK_MWHEELDOWN 0x0F
+#endif
+
 namespace Core {
 
 struct MonsterConfig {
@@ -57,6 +64,17 @@ struct ItemConfig {
     float maxDistance = 200.0f;
 
     float color[4] = { 0.25f, 0.95f, 0.35f, 1.0f };
+};
+
+struct GodModeConfig {
+    bool enabled = false;
+    bool healToMax = true;
+    bool preventDeath = true;
+    bool noFallDamage = true;
+    bool autoRevive = false;
+    int toggleKey = 'G';
+    int keyMode = 1;
+    bool active = false;
 };
 
 struct MovementConfig {
@@ -152,6 +170,7 @@ public:
     ValuableConfig valuable;
     ItemConfig item;
     MovementConfig movement;
+    GodModeConfig godMode;
     ThirdPersonConfig thirdPerson;
     SpectatorListConfig spectatorList;
     VisualConfig visual;

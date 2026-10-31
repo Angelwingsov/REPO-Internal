@@ -16,3 +16,4 @@ An internal cheat for **R.E.P.O** (DirectX 11, x64).
 | `Delete` / `Insert` | Toggle Menu |
 | `F` | Third Person |
 | `V` | Speedhack |
+| `G` | God Mode |

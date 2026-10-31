@@ -5,6 +5,7 @@
 #include "memory/memory.h"
 #include "unity/unity_engine.h"
 #include "mono/mono_bridge.h"
+#include "hook/input.h"
 
 namespace Features {
 
@@ -25,7 +26,7 @@ void ThirdPerson::Update() {
     bool shouldBeActive = false;
     if (cfg.thirdPerson.enabled) {
         if (cfg.thirdPerson.toggleKey > 0) {
-            bool isDown = (GetAsyncKeyState(cfg.thirdPerson.toggleKey) & 0x8000) != 0;
+            bool isDown = Hook::InputHook::IsKeyHeld(cfg.thirdPerson.toggleKey);
             if (cfg.thirdPerson.keyMode == 0) {
                 shouldBeActive = isDown;
             } else {

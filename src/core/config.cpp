@@ -13,6 +13,7 @@ void Config::ResetToDefaults() {
     valuable = ValuableConfig();
     item = ItemConfig();
     movement = MovementConfig();
+    godMode = GodModeConfig();
     thirdPerson = ThirdPersonConfig();
     spectatorList = SpectatorListConfig();
     troll = TrollConfig();

@@ -5,6 +5,7 @@
 #include "memory/memory.h"
 #include "unity/unity_engine.h"
 #include "mono/mono_bridge.h"
+#include "hook/input.h"
 
 namespace Features {
 
@@ -15,11 +16,14 @@ PlayerMods& PlayerMods::Get() {
 
 const char* PlayerMods::GetKeyName(int vkCode) {
     switch (vkCode) {
+    case 0: return "NONE";
     case VK_LBUTTON: return "M1";
     case VK_RBUTTON: return "M2";
-    case VK_MBUTTON: return "M3";
+    case VK_MBUTTON: return "M3 (Wheel)";
     case VK_XBUTTON1: return "M4";
     case VK_XBUTTON2: return "M5";
+    case VK_MWHEELUP: return "MWheelUp";
+    case VK_MWHEELDOWN: return "MWheelDown";
     case VK_SHIFT:
     case VK_LSHIFT: return "LSHIFT";
     case VK_RSHIFT: return "RSHIFT";
@@ -32,6 +36,13 @@ const char* PlayerMods::GetKeyName(int vkCode) {
     case VK_SPACE: return "SPACE";
     case VK_TAB: return "TAB";
     case VK_CAPITAL: return "CAPS";
+    case VK_ESCAPE: return "ESC";
+    case VK_DELETE: return "DELETE";
+    case VK_INSERT: return "INSERT";
+    case VK_HOME: return "HOME";
+    case VK_END: return "END";
+    case VK_PRIOR: return "PGUP";
+    case VK_NEXT: return "PGDN";
     case VK_F1: return "F1";
     case VK_F2: return "F2";
     case VK_F3: return "F3";
@@ -44,20 +55,18 @@ const char* PlayerMods::GetKeyName(int vkCode) {
     case VK_F10: return "F10";
     case VK_F11: return "F11";
     case VK_F12: return "F12";
-    default:
-        if (vkCode >= 'A' && vkCode <= 'Z') {
-            static char buf[4];
-            buf[0] = static_cast<char>(vkCode);
-            buf[1] = '\0';
-            return buf;
+    default: {
+        static char bufs[4][16];
+        static int bufIdx = 0;
+        char* cur = bufs[bufIdx++ % 4];
+        if ((vkCode >= 'A' && vkCode <= 'Z') || (vkCode >= '0' && vkCode <= '9')) {
+            cur[0] = static_cast<char>(vkCode);
+            cur[1] = '\0';
+            return cur;
         }
-        if (vkCode >= '0' && vkCode <= '9') {
-            static char buf[4];
-            buf[0] = static_cast<char>(vkCode);
-            buf[1] = '\0';
-            return buf;
-        }
-        return "KEY";
+        sprintf_s(cur, 16, "Key %d", vkCode);
+        return cur;
+    }
     }
 }
 
@@ -82,7 +91,7 @@ void PlayerMods::Update() {
         if (cfg.movement.speedAlwaysOn) {
             shouldBeActive = true;
         } else if (cfg.movement.speedKey > 0) {
-            bool isDown = (GetAsyncKeyState(cfg.movement.speedKey) & 0x8000) != 0;
+            bool isDown = Hook::InputHook::IsKeyHeld(cfg.movement.speedKey);
             if (cfg.movement.speedKeyMode == 0) {
                 shouldBeActive = isDown;
             } else {

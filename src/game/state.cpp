@@ -54,6 +54,15 @@ void GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPlayerAvatar, "clientCameraStateValid", offsets.PlayerAvatar_clientCameraStateValid, 0x0158);
     RESOLVE_FIELD(klassPlayerHealth, "health", offsets.PlayerHealth_health, 0x0028);
     RESOLVE_FIELD(klassPlayerHealth, "maxHealth", offsets.PlayerHealth_maxHealth, 0x0030);
+    RESOLVE_FIELD(klassPlayerHealth, "godMode", offsets.PlayerHealth_godMode, 0x00C0);
+    RESOLVE_FIELD(klassPlayerHealth, "invincibleTimer", offsets.PlayerHealth_invincibleTimer, 0x0188);
+    RESOLVE_FIELD(klassPlayerHealth, "hurtFreeze", offsets.PlayerHealth_hurtFreeze, 0x00A0);
+    RESOLVE_FIELD(klassPlayerHealth, "hurtFreezeTimer", offsets.PlayerHealth_hurtFreezeTimer, 0x00A4);
+    RESOLVE_FIELD(klassPlayerAvatar, "fallDamageResetState", offsets.PlayerAvatar_fallDamageResetState, 0x0280);
+    RESOLVE_FIELD(klassPlayerAvatar, "fallDamageResetTimer", offsets.PlayerAvatar_fallDamageResetTimer, 0x0288);
+    RESOLVE_FIELD(klassPlayerTumble, "impactHurtTimer", offsets.PlayerTumble_impactHurtTimer, 0x0098);
+    RESOLVE_FIELD(klassPlayerTumble, "impactHurtDamage", offsets.PlayerTumble_impactHurtDamage, 0x009C);
+    RESOLVE_FIELD(klassDebugCommandHandler, "godMode", offsets.DebugCommandHandler_godMode, 0x0090);
 
     RESOLVE_FIELD(klassSpectateCamera, "player", offsets.SpectateCamera_player, 0x0028);
     RESOLVE_FIELD(klassSpectateCamera, "currentState", offsets.SpectateCamera_currentState, 0x0018);
@@ -169,6 +178,7 @@ bool GameState::Initialize() {
     GET_APP_CLASS(klassSpectateCamera, "SpectateCamera");
     GET_APP_CLASS(klassPlayerAvatarVisuals, "PlayerAvatarVisuals");
     GET_APP_CLASS(klassPlayerVisionTarget, "PlayerVisionTarget");
+    GET_APP_CLASS(klassDebugCommandHandler, "DebugCommandHandler");
 
     if (klassCameraPosition) {
         methodCameraPositionOverride = bridge.FindMethod(klassCameraPosition, "OverridePosition", 2);
@@ -197,8 +207,23 @@ bool GameState::Initialize() {
         }
     }
 
+    if (klassPlayerHealth) {
+        methodPlayerHealthHeal = bridge.FindMethod(klassPlayerHealth, "Heal", 2);
+        if (methodPlayerHealthHeal) {
+            LOG_OK("Method [PlayerHealth::Heal] -> %p", methodPlayerHealthHeal);
+        }
+        methodPlayerHealthInvincibleSet = bridge.FindMethod(klassPlayerHealth, "InvincibleSet", 1);
+        if (methodPlayerHealthInvincibleSet) {
+            LOG_OK("Method [PlayerHealth::InvincibleSet] -> %p", methodPlayerHealthInvincibleSet);
+        }
+    }
+
     if (klassPlayerAvatar) {
         methodOverrideAnimationSpeed = bridge.FindMethod(klassPlayerAvatar, "OverrideAnimationSpeed", 4);
+        methodPlayerAvatarRevive = bridge.FindMethod(klassPlayerAvatar, "Revive", 1);
+        if (methodPlayerAvatarRevive) {
+            LOG_OK("Method [PlayerAvatar::Revive] -> %p", methodPlayerAvatarRevive);
+        }
     }
 
     #undef GET_APP_CLASS
@@ -331,6 +356,74 @@ void GameState::SetAnimationSpeed(float targetSpeed) {
         MonoObject* exc = nullptr;
         Mono::Bridge::Get().InvokeMethod(methodOverrideAnimationSpeed, reinterpret_cast<void*>(avatar), args, &exc);
     }
+}
+
+bool GameState::ReviveLocalPlayer() {
+    auto& bridge = Mono::Bridge::Get();
+    if (!klassPlayerAvatar || !methodPlayerAvatarRevive) return false;
+
+    uintptr_t avatar = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerAvatar, "instance"));
+    if (!avatar && klassPlayerController) {
+        uintptr_t playerCtrl = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerController, "instance"));
+        if (playerCtrl && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(playerCtrl))) {
+            Memory::ReadPtr(playerCtrl + offsets.PlayerController_playerAvatarScript, avatar);
+        }
+    }
+    if (!avatar || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar))) return false;
+
+    bridge.AttachCurrentThread();
+    bool revivedByTruck = false;
+    void* args[1] = { &revivedByTruck };
+    MonoObject* exc = nullptr;
+    bridge.InvokeMethod(methodPlayerAvatarRevive, reinterpret_cast<void*>(avatar), args, &exc);
+    if (exc) {
+        LOG_ERR("GameState::ReviveLocalPlayer: Exception thrown in PlayerAvatar.Revive");
+        return false;
+    }
+
+    LOG_OK("GameState::ReviveLocalPlayer: Revive invoked successfully!");
+    return true;
+}
+
+bool GameState::HealLocalPlayer(int healAmount) {
+    auto& bridge = Mono::Bridge::Get();
+    if (!klassPlayerAvatar) return false;
+
+    uintptr_t avatar = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerAvatar, "instance"));
+    if (!avatar && klassPlayerController) {
+        uintptr_t playerCtrl = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerController, "instance"));
+        if (playerCtrl && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(playerCtrl))) {
+            Memory::ReadPtr(playerCtrl + offsets.PlayerController_playerAvatarScript, avatar);
+        }
+    }
+    if (!avatar || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar))) return false;
+
+    uintptr_t healthObj = 0;
+    if (!Memory::ReadPtr(avatar + offsets.PlayerAvatar_playerHealth, healthObj) || !healthObj ||
+        !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(healthObj))) {
+        return false;
+    }
+
+    int curHp = 0, maxHp = 100;
+    Memory::ReadInt(healthObj + offsets.PlayerHealth_health, curHp);
+    Memory::ReadInt(healthObj + offsets.PlayerHealth_maxHealth, maxHp);
+    if (maxHp <= 0) maxHp = 100;
+
+    if (healAmount <= 0) {
+        healAmount = maxHp - curHp;
+    }
+    if (healAmount <= 0) return true;
+
+    if (methodPlayerHealthHeal) {
+        bridge.AttachCurrentThread();
+        bool effect = false;
+        void* args[2] = { &healAmount, &effect };
+        MonoObject* exc = nullptr;
+        bridge.InvokeMethod(methodPlayerHealthHeal, reinterpret_cast<void*>(healthObj), args, &exc);
+    }
+
+    Memory::WriteInt(healthObj + offsets.PlayerHealth_health, maxHp);
+    return true;
 }
 
 }

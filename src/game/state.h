@@ -42,6 +42,15 @@ struct Offsets {
     int PlayerAvatar_clientCameraStateValid = 0x0158;
     int PlayerHealth_health = 0x0028;
     int PlayerHealth_maxHealth = 0x0030;
+    int PlayerHealth_godMode = 0x00C0;
+    int PlayerHealth_invincibleTimer = 0x0188;
+    int PlayerHealth_hurtFreeze = 0x00A0;
+    int PlayerHealth_hurtFreezeTimer = 0x00A4;
+    int PlayerAvatar_fallDamageResetState = 0x0280;
+    int PlayerAvatar_fallDamageResetTimer = 0x0288;
+    int PlayerTumble_impactHurtTimer = 0x0098;
+    int PlayerTumble_impactHurtDamage = 0x009C;
+    int DebugCommandHandler_godMode = 0x0090;
 
     int SpectateCamera_player = 0x0028;
     int SpectateCamera_currentState = 0x0018;
@@ -154,14 +163,20 @@ public:
     MonoClass* klassSpectateCamera = nullptr;
     MonoClass* klassPlayerAvatarVisuals = nullptr;
     MonoClass* klassPlayerVisionTarget = nullptr;
+    MonoClass* klassDebugCommandHandler = nullptr;
     MonoMethod* methodCameraPositionOverride = nullptr;
     MonoMethod* methodShowSelfOverride = nullptr;
     MonoMethod* methodCosmeticUnlockAll = nullptr;
     MonoMethod* methodOverrideAnimationSpeed = nullptr;
+    MonoMethod* methodPlayerHealthHeal = nullptr;
+    MonoMethod* methodPlayerHealthInvincibleSet = nullptr;
+    MonoMethod* methodPlayerAvatarRevive = nullptr;
 
     bool UnlockAllCosmetics(int* outUnlockedCount = nullptr, int* outTotalCount = nullptr);
     bool GetCosmeticStats(int& unlockedCount, int& totalCount);
     void SetAnimationSpeed(float targetSpeed);
+    bool ReviveLocalPlayer();
+    bool HealLocalPlayer(int healAmount = 0);
 
 private:
     GameState() = default;
