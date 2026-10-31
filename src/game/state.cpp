@@ -2,8 +2,75 @@
 #include "core/logger.h"
 #include "memory/memory.h"
 #include "unity/unity_engine.h"
+#include "minhook/include/MinHook.h"
+#include "features/removals.h"
+#include <mutex>
+#include <utility>
 
 namespace Game {
+
+namespace {
+    struct AppearanceChange {
+        uintptr_t target = 0;
+        bool cosmetics = false, colors = false;
+    };
+    std::mutex appearanceMutex;
+    AppearanceChange pendingAppearance;
+    bool appearancePending = false, appearanceReady = false, appearanceSuccess = false;
+    std::string appearanceMessage;
+    using PlayerUpdate = void (*)(void*);
+    PlayerUpdate originalPlayerUpdate = nullptr;
+    bool appearanceHookReady = false;
+
+    void PlayerUpdateHook(void* controller) {
+        originalPlayerUpdate(controller);
+        AppearanceChange request;
+        {
+            std::lock_guard<std::mutex> lock(appearanceMutex);
+            if (!appearancePending) return;
+            request = pendingAppearance;
+            appearancePending = false;
+        }
+        auto& gs = GameState::Get();
+        bool targetPresent = false;
+        for (const auto& player : gs.GetServerPlayers()) {
+            if (player.address == request.target && !player.isLocal) targetPresent = true;
+        }
+        bool cosmetics = !request.cosmetics, colors = !request.colors;
+        if (targetPresent) {
+            if (request.cosmetics) cosmetics = gs.CopyPlayerCosmetics(request.target);
+            if (request.colors) colors = gs.CopyPlayerColors(request.target);
+        }
+        std::string message;
+        if (!targetPresent) message = "[-] Target left or is unavailable. Select another player.";
+        else {
+            if (request.cosmetics) message += cosmetics ? "Cosmetics: OK. " : "Cosmetics: FAILED. ";
+            if (request.colors) message += colors ? "Colors: OK." : "Colors: FAILED.";
+        }
+        std::lock_guard<std::mutex> lock(appearanceMutex);
+        appearanceSuccess = targetPresent && cosmetics && colors;
+        appearanceMessage = std::move(message);
+        appearanceReady = true;
+    }
+}
+
+bool GameState::QueueCosmeticChange(uintptr_t target, bool cosmetics, bool colors) {
+    if (!appearanceHookReady || !target || (!cosmetics && !colors)) return false;
+    std::lock_guard<std::mutex> lock(appearanceMutex);
+    pendingAppearance = { target, cosmetics, colors };
+    appearancePending = true;
+    appearanceReady = false;
+    return true;
+}
+
+bool GameState::TakeCosmeticResult(bool& success, std::string& message) {
+    std::lock_guard<std::mutex> lock(appearanceMutex);
+    if (!appearanceReady) return false;
+    success = appearanceSuccess;
+    message = appearanceMessage;
+    appearanceReady = false;
+    return true;
+}
 
 GameState& GameState::Get() {
     static GameState instance;
@@ -44,6 +111,7 @@ void GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassRunManager, "sceneHandoffNativePending", offsets.RunManager_sceneHandoffNativePending, 0x0144);
 
     RESOLVE_FIELD(klassPlayerAvatar, "playerName", offsets.PlayerAvatar_playerName, 0x00B0);
+    RESOLVE_FIELD(klassPlayerAvatar, "playerCosmetics", offsets.PlayerAvatar_playerCosmetics, 0x00A8);
     RESOLVE_FIELD(klassPlayerAvatar, "playerTransform", offsets.PlayerAvatar_playerTransform, 0x0018);
     RESOLVE_FIELD(klassPlayerAvatar, "isLocal", offsets.PlayerAvatar_isLocal, 0x00C0);
     RESOLVE_FIELD(klassPlayerAvatar, "deadSet", offsets.PlayerAvatar_deadSet, 0x0188);
@@ -68,6 +136,11 @@ void GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPlayerTumble, "impactHurtTimer", offsets.PlayerTumble_impactHurtTimer, 0x0098);
     RESOLVE_FIELD(klassPlayerTumble, "impactHurtDamage", offsets.PlayerTumble_impactHurtDamage, 0x009C);
     RESOLVE_FIELD(klassDebugCommandHandler, "godMode", offsets.DebugCommandHandler_godMode, 0x0090);
+
+    RESOLVE_FIELD(klassPlayerCosmetics, "cosmeticEquippedRaw", offsets.PlayerCosmetics_cosmeticEquippedRaw, 0x0048);
+    RESOLVE_FIELD(klassPlayerCosmetics, "colorsEquipped", offsets.PlayerCosmetics_colorsEquipped, 0x0050);
+    RESOLVE_FIELD(klassPlayerCosmetics, "photonView", offsets.PlayerCosmetics_photonView, 0x0018);
+
 
     RESOLVE_FIELD(klassSpectateCamera, "player", offsets.SpectateCamera_player, 0x0028);
     RESOLVE_FIELD(klassSpectateCamera, "currentState", offsets.SpectateCamera_currentState, 0x0018);
@@ -190,7 +263,7 @@ bool GameState::Initialize() {
     GET_APP_CLASS(klassPlayerAvatarVisuals, "PlayerAvatarVisuals");
     GET_APP_CLASS(klassPlayerVisionTarget, "PlayerVisionTarget");
     GET_APP_CLASS(klassDebugCommandHandler, "DebugCommandHandler");
-
+    GET_APP_CLASS(klassPlayerCosmetics, "PlayerCosmetics");
     if (klassCameraPosition) {
         methodCameraPositionOverride = bridge.FindMethod(klassCameraPosition, "OverridePosition", 2);
         if (methodCameraPositionOverride) {
@@ -235,12 +308,38 @@ bool GameState::Initialize() {
         if (methodPlayerAvatarRevive) {
             LOG_OK("Method [PlayerAvatar::Revive] -> %p", methodPlayerAvatarRevive);
         }
+
+    }
+
+    if (klassPlayerCosmetics) {
+        methodPlayerCosmeticsSetupCosmetics = bridge.FindMethod(klassPlayerCosmetics, "SetupCosmetics", 3);
+        if (methodPlayerCosmeticsSetupCosmetics) {
+            LOG_OK("Method [PlayerCosmetics::SetupCosmetics] -> %p", methodPlayerCosmeticsSetupCosmetics);
+        }
+        methodPlayerCosmeticsSetupColors = bridge.FindMethod(klassPlayerCosmetics, "SetupColors", 2);
+        if (methodPlayerCosmeticsSetupColors) {
+            LOG_OK("Method [PlayerCosmetics::SetupColors] -> %p", methodPlayerCosmeticsSetupColors);
+        }
     }
 
     #undef GET_APP_CLASS
 
     ResolveOffsets();
 
+    // Present runs on the render thread; cosmetics instantiate Unity objects.
+    // Dispatch appearance changes from the local controller's managed Update instead.
+    auto compileMethod = reinterpret_cast<void* (*)(MonoMethod*)>(GetProcAddress(
+        GetModuleHandleA("mono-2.0-bdwgc.dll") ? GetModuleHandleA("mono-2.0-bdwgc.dll")
+            : GetModuleHandleA("mono.dll"), "mono_compile_method"));
+    MonoMethod* update = bridge.FindMethod(klassPlayerController, "Update", 0);
+    void* updateCode = compileMethod && update ? compileMethod(update) : nullptr;
+    if (updateCode && MH_CreateHook(updateCode, &PlayerUpdateHook,
+        reinterpret_cast<void**>(&originalPlayerUpdate)) == MH_OK) {
+        appearanceHookReady = MH_EnableHook(updateCode) == MH_OK;
+    }
+    if (!appearanceHookReady) LOG_ERR("Appearance changes unavailable: main-thread Update hook failed");
+
+    Features::Removals::Get().Initialize();
     m_Initialized = (klassEnemyDirector != nullptr || klassValuableDirector != nullptr);
     return m_Initialized;
 }
@@ -316,21 +415,19 @@ bool GameState::UnlockAllCosmetics(int* outUnlockedCount, int* outTotalCount) {
         }
     }
 
-    if (outUnlockedCount || outTotalCount) {
-        int unlocked = 0, total = 0;
-        if (GetCosmeticStats(unlocked, total)) {
-            if (outUnlockedCount) *outUnlockedCount = unlocked;
-            if (outTotalCount) *outTotalCount = total;
-        }
-    }
+    int u = 0, t = 0;
+    GetCosmeticStats(u, t);
+    if (outUnlockedCount) *outUnlockedCount = u;
+    if (outTotalCount) *outTotalCount = t;
 
-    LOG_OK("UnlockAllCosmetics: All cosmetics unlocked and saved successfully!");
+    LOG_OK("UnlockAllCosmetics: Successfully unlocked %d / %d cosmetics!", u, t);
     return true;
 }
 
 bool GameState::GetCosmeticStats(int& unlockedCount, int& totalCount) {
     unlockedCount = 0;
     totalCount = 0;
+
     if (!klassMetaManager) return false;
 
     uintptr_t metaMgr = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(klassMetaManager, "instance"));
@@ -340,14 +437,26 @@ bool GameState::GetCosmeticStats(int& unlockedCount, int& totalCount) {
 
     uintptr_t unlocksList = 0;
     uintptr_t assetsList = 0;
-    Memory::Read<uintptr_t>(metaMgr + offsets.MetaManager_cosmeticUnlocks, unlocksList);
-    Memory::Read<uintptr_t>(metaMgr + offsets.MetaManager_cosmeticAssets, assetsList);
+
+    if (offsets.MetaManager_cosmeticUnlocks > 0) {
+        Memory::ReadPtr(metaMgr + offsets.MetaManager_cosmeticUnlocks, unlocksList);
+    }
+    if (offsets.MetaManager_cosmeticAssets > 0) {
+        Memory::ReadPtr(metaMgr + offsets.MetaManager_cosmeticAssets, assetsList);
+    }
 
     if (unlocksList) {
-        Memory::ReadInt(unlocksList + 0x18, unlockedCount);
+        int count = 0;
+        if (Memory::ReadMonoListCount(unlocksList, count)) {
+            unlockedCount = count;
+        }
     }
+
     if (assetsList) {
-        Memory::ReadInt(assetsList + 0x18, totalCount);
+        int count = 0;
+        if (Memory::ReadMonoListCount(assetsList, count)) {
+            totalCount = count;
+        }
     }
     return (totalCount > 0);
 }
@@ -373,13 +482,7 @@ bool GameState::ReviveLocalPlayer() {
     auto& bridge = Mono::Bridge::Get();
     if (!klassPlayerAvatar || !methodPlayerAvatarRevive) return false;
 
-    uintptr_t avatar = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerAvatar, "instance"));
-    if (!avatar && klassPlayerController) {
-        uintptr_t playerCtrl = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerController, "instance"));
-        if (playerCtrl && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(playerCtrl))) {
-            Memory::ReadPtr(playerCtrl + offsets.PlayerController_playerAvatarScript, avatar);
-        }
-    }
+    uintptr_t avatar = GetLocalPlayerAvatar();
     if (!avatar || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar))) return false;
 
     bridge.AttachCurrentThread();
@@ -400,13 +503,7 @@ bool GameState::HealLocalPlayer(int healAmount) {
     auto& bridge = Mono::Bridge::Get();
     if (!klassPlayerAvatar) return false;
 
-    uintptr_t avatar = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerAvatar, "instance"));
-    if (!avatar && klassPlayerController) {
-        uintptr_t playerCtrl = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerController, "instance"));
-        if (playerCtrl && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(playerCtrl))) {
-            Memory::ReadPtr(playerCtrl + offsets.PlayerController_playerAvatarScript, avatar);
-        }
-    }
+    uintptr_t avatar = GetLocalPlayerAvatar();
     if (!avatar || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar))) return false;
 
     uintptr_t healthObj = 0;
@@ -435,6 +532,167 @@ bool GameState::HealLocalPlayer(int healAmount) {
 
     Memory::WriteInt(healthObj + offsets.PlayerHealth_health, maxHp);
     return true;
+}
+
+uintptr_t GameState::GetLocalPlayerAvatar() {
+    auto& bridge = Mono::Bridge::Get();
+    uintptr_t avatar = 0;
+    if (klassPlayerAvatar) {
+        avatar = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerAvatar, "instance"));
+    }
+    if (!avatar && klassPlayerController) {
+        uintptr_t playerCtrl = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassPlayerController, "instance"));
+        if (playerCtrl && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(playerCtrl))) {
+            Memory::ReadPtr(playerCtrl + offsets.PlayerController_playerAvatarScript, avatar);
+        }
+    }
+    if (!avatar && klassGameDirector) {
+        uintptr_t gameDir = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassGameDirector, "instance"));
+        if (gameDir && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(gameDir))) {
+            uintptr_t playerList = 0;
+            if (Memory::ReadPtr(gameDir + offsets.GameDirector_PlayerList, playerList)) {
+                std::vector<uintptr_t> avatars;
+                if (Memory::ReadMonoList(playerList, avatars)) {
+                    for (uintptr_t a : avatars) {
+                        if (!a || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(a))) continue;
+                        uint8_t isLoc = 0;
+                        Memory::ReadByte(a + offsets.PlayerAvatar_isLocal, isLoc);
+                        if (isLoc) {
+                            avatar = a;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return (avatar && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar))) ? avatar : 0;
+}
+
+bool GameState::CopyPlayerCosmetics(uintptr_t targetAvatarAddress) {
+    if (!targetAvatarAddress || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(targetAvatarAddress))) return false;
+    auto& bridge = Mono::Bridge::Get();
+    bridge.AttachCurrentThread();
+
+    uintptr_t localAvatar = GetLocalPlayerAvatar();
+    if (!localAvatar) return false;
+
+    uintptr_t targetCosmetics = 0;
+    uintptr_t localCosmetics = 0;
+    Memory::ReadPtr(targetAvatarAddress + offsets.PlayerAvatar_playerCosmetics, targetCosmetics);
+    Memory::ReadPtr(localAvatar + offsets.PlayerAvatar_playerCosmetics, localCosmetics);
+
+    if (!Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(targetCosmetics)) ||
+        !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(localCosmetics)) ||
+        !methodPlayerCosmeticsSetupCosmetics) return false;
+
+    uintptr_t targetEquippedRaw = 0;
+    if (offsets.PlayerCosmetics_cosmeticEquippedRaw > 0) {
+        Memory::ReadPtr(targetCosmetics + offsets.PlayerCosmetics_cosmeticEquippedRaw, targetEquippedRaw);
+    }
+
+    if (targetEquippedRaw) {
+        uint8_t synced = 0;
+        uint8_t forced = 1;
+        void* args[3] = { &synced, &forced, reinterpret_cast<void*>(targetEquippedRaw) };
+        // Apply locally first; the synced branch only queues a Photon RPC.
+        if (!bridge.TryInvokeMethod(methodPlayerCosmeticsSetupCosmetics, reinterpret_cast<void*>(localCosmetics), args)) {
+            LOG_WARN("CopyPlayerCosmetics: SetupCosmetics threw an exception");
+            return false;
+        }
+        synced = 1;
+        if (!bridge.TryInvokeMethod(methodPlayerCosmeticsSetupCosmetics, reinterpret_cast<void*>(localCosmetics), args)) return false;
+        LOG_OK("CopyPlayerCosmetics: Applied and synced cosmetics to network");
+        return true;
+    }
+    return false;
+}
+
+bool GameState::CopyPlayerColors(uintptr_t targetAvatarAddress) {
+    if (!targetAvatarAddress || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(targetAvatarAddress))) return false;
+    auto& bridge = Mono::Bridge::Get();
+    bridge.AttachCurrentThread();
+
+    uintptr_t localAvatar = GetLocalPlayerAvatar();
+    if (!localAvatar) return false;
+
+    uintptr_t targetCosmetics = 0;
+    uintptr_t localCosmetics = 0;
+    Memory::ReadPtr(targetAvatarAddress + offsets.PlayerAvatar_playerCosmetics, targetCosmetics);
+    Memory::ReadPtr(localAvatar + offsets.PlayerAvatar_playerCosmetics, localCosmetics);
+
+    if (!Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(targetCosmetics)) ||
+        !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(localCosmetics)) ||
+        !methodPlayerCosmeticsSetupColors) return false;
+
+    uintptr_t targetColorsEquipped = 0;
+    if (offsets.PlayerCosmetics_colorsEquipped > 0) {
+        Memory::ReadPtr(targetCosmetics + offsets.PlayerCosmetics_colorsEquipped, targetColorsEquipped);
+    }
+
+    if (targetColorsEquipped) {
+        uint8_t synced = 0;
+        void* args[2] = { &synced, reinterpret_cast<void*>(targetColorsEquipped) };
+        if (!bridge.TryInvokeMethod(methodPlayerCosmeticsSetupColors, reinterpret_cast<void*>(localCosmetics), args)) {
+            LOG_WARN("CopyPlayerColors: SetupColors threw an exception");
+            return false;
+        }
+        synced = 1;
+        if (!bridge.TryInvokeMethod(methodPlayerCosmeticsSetupColors, reinterpret_cast<void*>(localCosmetics), args)) return false;
+        LOG_OK("CopyPlayerColors: Applied and synced colors to network");
+        return true;
+    }
+    return false;
+}
+
+std::vector<ServerPlayerInfo> GameState::GetServerPlayers() {
+    std::vector<ServerPlayerInfo> list;
+    auto& bridge = Mono::Bridge::Get();
+    if (!klassGameDirector) return list;
+
+    uintptr_t gameDir = reinterpret_cast<uintptr_t>(bridge.GetStaticFieldValue(klassGameDirector, "instance"));
+    if (!gameDir || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(gameDir))) return list;
+
+    uintptr_t playerList = 0;
+    if (!Memory::ReadPtr(gameDir + offsets.GameDirector_PlayerList, playerList)) return list;
+
+    std::vector<uintptr_t> avatars;
+    if (!Memory::ReadMonoList(playerList, avatars)) return list;
+
+    for (uintptr_t avatar : avatars) {
+        if (!avatar || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar))) continue;
+
+        ServerPlayerInfo info;
+        info.address = avatar;
+
+        uint8_t isLoc = 0;
+        Memory::ReadByte(avatar + offsets.PlayerAvatar_isLocal, isLoc);
+        info.isLocal = (isLoc != 0);
+
+        uint8_t dead = 0;
+        Memory::ReadByte(avatar + offsets.PlayerAvatar_deadSet, dead);
+        info.isDead = (dead != 0);
+
+        uintptr_t namePtr = 0;
+        if (Memory::ReadPtr(avatar + offsets.PlayerAvatar_playerName, namePtr) && namePtr) {
+            info.name = bridge.ReadMonoString(reinterpret_cast<MonoString*>(namePtr));
+        }
+        if (info.name.empty()) {
+            info.name = info.isLocal ? "Local Player" : "Player";
+        }
+
+        uintptr_t healthObj = 0;
+        if (Memory::ReadPtr(avatar + offsets.PlayerAvatar_playerHealth, healthObj) && healthObj &&
+            Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(healthObj))) {
+            Memory::ReadInt(healthObj + offsets.PlayerHealth_health, info.health);
+        } else {
+            info.health = info.isDead ? 0 : 100;
+        }
+
+        list.push_back(info);
+    }
+
+    return list;
 }
 
 }

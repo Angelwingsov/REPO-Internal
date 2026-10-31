@@ -61,12 +61,21 @@ inline bool Write(uintptr_t address, const T& value) {
     return SafeCopyMemory(reinterpret_cast<void*>(address), &value, sizeof(T));
 }
 
+inline bool WritePtr(uintptr_t address, uintptr_t value) { return Write<uintptr_t>(address, value); }
 inline bool WriteFloat(uintptr_t address, float value) { return Write<float>(address, value); }
 inline bool WriteInt(uintptr_t address, int32_t value) { return Write<int32_t>(address, value); }
 inline bool WriteByte(uintptr_t address, uint8_t value) { return Write<uint8_t>(address, value); }
 inline bool WriteBool(uintptr_t address, bool value) { return Write<bool>(address, value); }
 
 std::string ReadString(uintptr_t address, size_t maxLen = 256);
+
+inline bool ReadMonoListCount(uintptr_t listPtr, int32_t& outCount) {
+    outCount = 0;
+    if (!IsValidAddress(listPtr)) return false;
+    constexpr size_t ptrSize = sizeof(void*);
+    const size_t countOffset = ptrSize * 2 + ptrSize;
+    return ReadInt(listPtr + countOffset, outCount);
+}
 
 template <typename T = uintptr_t>
 bool ReadMonoList(uintptr_t listPtr, std::vector<T>& outList, size_t maxElements = 2000) {

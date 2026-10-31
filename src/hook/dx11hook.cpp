@@ -11,6 +11,7 @@
 #include "features/player.h"
 #include "features/thirdperson.h"
 #include "features/spectatorlist.h"
+#include "features/removals.h"
 #include "ui/theme.h"
 #include "ui/menu.h"
 #include "minhook/include/MinHook.h"
@@ -233,6 +234,7 @@ bool DX11Hook::Initialize() {
 
 void DX11Hook::Shutdown() {
     if (!s_Hooked) return;
+    if (!Features::Removals::Get().RestoreBeforeUnload()) return;
     s_Hooked = false;
 
     LOG_INFO("Detaching cheat hooks and restoring state...");

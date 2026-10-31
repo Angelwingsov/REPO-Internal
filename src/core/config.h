@@ -146,6 +146,35 @@ struct TrollConfig {
     float animSpeed = 3.0f;
 };
 
+struct RemovalsConfig {
+    bool enabled = false;
+    bool noFog = true;
+    bool noGrain = true;
+    bool noVignette = true;
+    bool noBloom = false;
+    bool noMotionBlur = true;
+    bool noLensDistortion = true;
+    bool noChromaticAberration = true;
+    bool noCameraShake = true;
+    bool noCameraNoise = true;
+    bool noCameraGlitch = true;
+    bool noHurtOverlay = true;
+    bool noPostProcessing = false;
+};
+
+struct FullbrightConfig {
+    bool enabled = false;
+    float brightness = 1.0f;
+};
+
+struct CosmeticParserConfig {
+    int selectedPlayerIdx = 0;
+    uintptr_t selectedPlayerAddress = 0;
+    char statusMessage[128] = "";
+    bool actionSuccess = false;
+    bool hasStatus = false;
+};
+
 struct VisualConfig {
     bool textBackground = true;
     float textBgAlpha = 0.65f;
@@ -191,6 +220,9 @@ public:
     MenuConfig menu;
     Diagnostics diagnostics;
     TrollConfig troll;
+    CosmeticParserConfig cosmeticParser;
+    RemovalsConfig removals;
+    FullbrightConfig fullbright;
 
     void ResetToDefaults();
 

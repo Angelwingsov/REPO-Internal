@@ -33,6 +33,16 @@ void Bridge::AssemblyCallback(void* item, void* userData) {
         bridge->m_PhysicsImage = img;
         LOG_OK("Found UnityEngine.PhysicsModule Image: %p (%s)", img, rawName);
     }
+    // Utilities shares the prefix but does not contain Photon.Pun.PhotonNetwork.
+    // Assembly enumeration order is not guaranteed, so match the core assembly exactly.
+    if ((name == "PhotonUnityNetworking" || name == "PhotonUnityNetworking.dll") && !bridge->m_PhotonImage) {
+        bridge->m_PhotonImage = img;
+        LOG_OK("Found PhotonUnityNetworking Image: %p (%s)", img, rawName);
+    }
+    if (name.find("Unity.TextMeshPro") != std::string::npos && !bridge->m_TextMeshProImage) {
+        bridge->m_TextMeshProImage = img;
+        LOG_OK("Found Unity.TextMeshPro Image: %p (%s)", img, rawName);
+    }
 }
 
 bool Bridge::Initialize() {
@@ -187,6 +197,19 @@ bool Bridge::GetStaticBool(MonoClass* klass, const char* name, bool defaultVal) 
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         return defaultVal;
+    }
+}
+
+bool Bridge::TryInvokeMethod(MonoMethod* method, void* obj, void** params) {
+    if (!method || !m_mono_runtime_invoke) return false;
+    __try {
+        MonoObject* exception = nullptr;
+        m_mono_runtime_invoke(method, obj, params, &exception);
+        return exception == nullptr;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERR("Managed invocation failed with native exception 0x%08X", GetExceptionCode());
+        return false;
     }
 }
 

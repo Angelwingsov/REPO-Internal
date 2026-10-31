@@ -5,7 +5,10 @@
 #include "game/state.h"
 #include "features/player.h"
 #include "features/godmode.h"
+#include "features/removals.h"
 #include "hook/input.h"
+#include <vector>
+#include <string>
 
 namespace UI {
 
@@ -33,12 +36,10 @@ static void DrawKeybindWidget(const char* label, int& key, bool& isBinding, bool
                 isBinding = false;
                 io.MouseWheel = 0.0f;
             }
-
             else if (GetAsyncKeyState(VK_MBUTTON) & 0x8000) {
                 key = VK_MBUTTON;
                 isBinding = false;
             }
-
             else if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
                 key = VK_RBUTTON;
                 isBinding = false;
@@ -52,7 +53,6 @@ static void DrawKeybindWidget(const char* label, int& key, bool& isBinding, bool
                 isBinding = false;
             }
             else {
-
                 for (int k = VK_BACK; k <= 0xFE; ++k) {
                     if (k == VK_ESCAPE || k == VK_MWHEELUP || k == VK_MWHEELDOWN) continue;
                     if (GetAsyncKeyState(k) & 0x8000) {
@@ -71,7 +71,6 @@ static void DrawKeybindWidget(const char* label, int& key, bool& isBinding, bool
         isBinding = !isBinding;
         waitRelease = isBinding;
     }
-
 
     char popupId[64];
     sprintf_s(popupId, "Context##%s", label);
@@ -110,7 +109,7 @@ void Menu::Render() {
     auto& cfg = Core::Config::Get();
     if (!cfg.menu.isVisible) return;
 
-    ImGui::SetNextWindowSize(ImVec2(460, 620), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(480, 680), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("R.E.P.O Internal [DEL / INS]", &cfg.menu.isVisible)) {
         if (ImGui::CollapsingHeader("God Mode (Invulnerability)", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -295,6 +294,42 @@ void Menu::Render() {
             }
         }
 
+        if (ImGui::CollapsingHeader("Removals", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox("Enable Removals", &cfg.removals.enabled);
+            ImGui::BeginDisabled(!cfg.removals.enabled);
+            ImGui::SeparatorText("Environment");
+            ImGui::Checkbox("No Fog", &cfg.removals.noFog);
+            ImGui::SeparatorText("Post-Processing");
+            ImGui::Checkbox("Disable All Post-Processing", &cfg.removals.noPostProcessing);
+            ImGui::BeginDisabled(cfg.removals.noPostProcessing);
+            ImGui::Checkbox("No Film Grain", &cfg.removals.noGrain);
+            ImGui::Checkbox("No Vignette", &cfg.removals.noVignette);
+            ImGui::Checkbox("No Bloom", &cfg.removals.noBloom);
+            ImGui::Checkbox("No Motion Blur", &cfg.removals.noMotionBlur);
+            ImGui::Checkbox("No Lens Distortion", &cfg.removals.noLensDistortion);
+            ImGui::Checkbox("No Chromatic Aberration", &cfg.removals.noChromaticAberration);
+            ImGui::EndDisabled();
+            ImGui::SeparatorText("Camera & Screen Effects");
+            ImGui::Checkbox("No Camera Shake", &cfg.removals.noCameraShake);
+            ImGui::Checkbox("No Camera Sway", &cfg.removals.noCameraNoise);
+            ImGui::Checkbox("No Camera Glitches", &cfg.removals.noCameraGlitch);
+            ImGui::Checkbox("No Damage Overlay", &cfg.removals.noHurtOverlay);
+            ImGui::EndDisabled();
+            ImGui::TextWrapped("Switch off Removals to restore the game's visual effects.");
+            if (cfg.removals.enabled && !Features::Removals::Get().IsPostProcessingReady())
+                ImGui::TextWrapped("Post-processing controls are unavailable in this session.");
+        }
+
+        if (ImGui::CollapsingHeader("Fullbright", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox("Enable Fullbright", &cfg.fullbright.enabled);
+            ImGui::BeginDisabled(!cfg.fullbright.enabled);
+            ImGui::SliderFloat("Brightness", &cfg.fullbright.brightness, 0.1f, 3.0f, "%.2f");
+            ImGui::EndDisabled();
+            ImGui::TextWrapped("Keeps ambient lighting bright in every room. Works independently of Removals.");
+            if (cfg.fullbright.enabled && !Features::Removals::Get().IsLightingReady())
+                ImGui::TextWrapped("Lighting controls are unavailable in this session.");
+        }
+
         if (ImGui::CollapsingHeader("ESP", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::SeparatorText("General Settings");
             float maxDist = cfg.monster.maxDistance;
@@ -375,6 +410,7 @@ void Menu::Render() {
 
                 ImGui::Checkbox("Distance##I", &cfg.valuable.showDistance);
                 cfg.item.showDistance = cfg.valuable.showDistance;
+
                 ImGui::SameLine();
                 ImGui::Checkbox("Hide Extracted", &cfg.valuable.hideExtracted);
 
@@ -435,6 +471,98 @@ void Menu::Render() {
                 if (ImGui::Button("Scooby-Doo (3.0x)")) cfg.troll.animSpeed = 3.0f;
                 ImGui::SameLine();
                 if (ImGui::Button("Sonic (5.0x)")) cfg.troll.animSpeed = 5.0f;
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Cosmetic Parser", ImGuiTreeNodeFlags_DefaultOpen)) {
+            auto& gs = Game::GameState::Get();
+            std::string resultMessage;
+            if (gs.TakeCosmeticResult(cfg.cosmeticParser.actionSuccess, resultMessage)) {
+                cfg.cosmeticParser.hasStatus = true;
+                sprintf_s(cfg.cosmeticParser.statusMessage, "%s", resultMessage.c_str());
+            }
+            auto queueAppearance = [&](uintptr_t target, bool cosmetics, bool colors) {
+                bool queued = gs.QueueCosmeticChange(target, cosmetics, colors);
+                cfg.cosmeticParser.hasStatus = true;
+                cfg.cosmeticParser.actionSuccess = false;
+                sprintf_s(cfg.cosmeticParser.statusMessage, "%s", queued
+                    ? "Applying on next game update..." : "[-] Game update unavailable. Re-enter the session or reload the DLL.");
+            };
+
+            std::vector<Game::ServerPlayerInfo> serverPlayers = gs.GetServerPlayers();
+            for (auto it = serverPlayers.begin(); it != serverPlayers.end();) {
+                if (it->isLocal) it = serverPlayers.erase(it);
+                else ++it;
+            }
+            if (serverPlayers.empty()) {
+                cfg.cosmeticParser.selectedPlayerAddress = 0;
+                cfg.cosmeticParser.selectedPlayerIdx = -1;
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No players detected. Enter a lobby or game to scan players.");
+            } else {
+                std::vector<const char*> playerNames;
+                static char s_Labels[32][128];
+
+                int displayIdx = 0;
+                for (size_t i = 0; i < serverPlayers.size() && displayIdx < 32; ++i) {
+                    const auto& p = serverPlayers[i];
+                    snprintf(s_Labels[displayIdx], sizeof(s_Labels[displayIdx]), "%s%s (HP: %d)##%zu",
+                        p.name.c_str(),
+                        p.isLocal ? " [YOU]" : "",
+                        p.health,
+                        i);
+                    playerNames.push_back(s_Labels[displayIdx]);
+                    displayIdx++;
+                }
+
+                // Keep the same player selected when the server list is reordered.
+                cfg.cosmeticParser.selectedPlayerIdx = -1;
+                for (size_t i = 0; i < playerNames.size(); ++i) {
+                    if (serverPlayers[i].address == cfg.cosmeticParser.selectedPlayerAddress)
+                        cfg.cosmeticParser.selectedPlayerIdx = static_cast<int>(i);
+                }
+                if (cfg.cosmeticParser.selectedPlayerIdx < 0) cfg.cosmeticParser.selectedPlayerAddress = 0;
+
+                ImGui::SetNextItemWidth(300.0f);
+                bool targetChanged = ImGui::Combo("Select Target Player", &cfg.cosmeticParser.selectedPlayerIdx,
+                    playerNames.data(), static_cast<int>(playerNames.size()));
+
+                uintptr_t targetAddr = 0;
+                if (cfg.cosmeticParser.selectedPlayerIdx >= 0 && cfg.cosmeticParser.selectedPlayerIdx < static_cast<int>(serverPlayers.size())) {
+                    targetAddr = serverPlayers[cfg.cosmeticParser.selectedPlayerIdx].address;
+                }
+                if (targetChanged && targetAddr) {
+                    cfg.cosmeticParser.selectedPlayerAddress = targetAddr;
+                }
+
+                ImGui::Spacing();
+                ImGui::BeginDisabled(targetAddr == 0);
+                if (ImGui::Button("Copy Cosmetics + Colors", ImVec2(-1, 32.0f))) {
+                    if (targetAddr) {
+                        queueAppearance(targetAddr, true, true);
+                    }
+                }
+
+                if (ImGui::Button("Copy Cosmetics Only", ImVec2(150, 24.0f))) {
+                    if (targetAddr) {
+                        queueAppearance(targetAddr, true, false);
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Copy Colors Only", ImVec2(130, 24.0f))) {
+                    if (targetAddr) {
+                        queueAppearance(targetAddr, false, true);
+                    }
+                }
+                ImGui::EndDisabled();
+            }
+
+            if (cfg.cosmeticParser.hasStatus) {
+                ImGui::Spacing();
+                if (cfg.cosmeticParser.actionSuccess) {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "%s", cfg.cosmeticParser.statusMessage);
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", cfg.cosmeticParser.statusMessage);
+                }
             }
         }
 

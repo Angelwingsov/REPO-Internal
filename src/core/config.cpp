@@ -18,6 +18,9 @@ void Config::ResetToDefaults() {
     thirdPerson = ThirdPersonConfig();
     spectatorList = SpectatorListConfig();
     troll = TrollConfig();
+    cosmeticParser = CosmeticParserConfig();
+    removals = RemovalsConfig();
+    fullbright = FullbrightConfig();
     visual = VisualConfig();
     menu.isVisible = true;
     menu.toggleKey = VK_DELETE;

@@ -48,6 +48,9 @@
     <ClCompile Include="src\dllmain.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\removals.cpp">
+      <Filter>src\features</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\config.cpp">
       <Filter>src\core</Filter>
     </ClCompile>
@@ -159,6 +162,9 @@
       <Filter>src\features</Filter>
     </ClInclude>
     <ClInclude Include="src\features\spectatorlist.h">
+      <Filter>src\features</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\removals.h">
       <Filter>src\features</Filter>
     </ClInclude>
     <ClInclude Include="src\game\entities.h">

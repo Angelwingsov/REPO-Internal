@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
 #include <cstdint>
+#include <string>
+#include <vector>
 #include "mono/mono_bridge.h"
 
 namespace Game {
@@ -32,6 +34,7 @@ struct Offsets {
     int RunManager_sceneHandoffNativePending = 0x0144;
 
     int PlayerAvatar_playerName = 0x00B0;
+    int PlayerAvatar_playerCosmetics = 0x00A8;
     int PlayerAvatar_playerTransform = 0x0018;
     int PlayerAvatar_isLocal = 0x00C0;
     int PlayerAvatar_deadSet = 0x0188;
@@ -106,6 +109,11 @@ struct Offsets {
     int PhysGrabObject_timerAlterMass = 0x01B0;
     int PhysGrabObject_alterMassValue = 0x01B4;
 
+    int PlayerCosmetics_cosmeticEquippedRaw = 0x0048;
+    int PlayerCosmetics_colorsEquipped = 0x0050;
+    int PlayerCosmetics_photonView = 0x0018;
+
+
     int MetaManager_cosmeticUnlocks = 0x0030;
     int MetaManager_cosmeticAssets = 0x0070;
 
@@ -135,6 +143,14 @@ struct Offsets {
     int CameraPosition_overridePositionActive = 0x0034;
     int CameraPosition_overridePositionTimer = 0x0038;
     int CameraPosition_overridePositionTarget = 0x003C;
+};
+
+struct ServerPlayerInfo {
+    uintptr_t address = 0;
+    std::string name;
+    bool isLocal = false;
+    bool isDead = false;
+    int health = 100;
 };
 
 class GameState {
@@ -175,6 +191,8 @@ public:
     MonoClass* klassPlayerAvatarVisuals = nullptr;
     MonoClass* klassPlayerVisionTarget = nullptr;
     MonoClass* klassDebugCommandHandler = nullptr;
+    MonoClass* klassPlayerCosmetics = nullptr;
+
     MonoMethod* methodCameraPositionOverride = nullptr;
     MonoMethod* methodShowSelfOverride = nullptr;
     MonoMethod* methodCosmeticUnlockAll = nullptr;
@@ -182,12 +200,22 @@ public:
     MonoMethod* methodPlayerHealthHeal = nullptr;
     MonoMethod* methodPlayerHealthInvincibleSet = nullptr;
     MonoMethod* methodPlayerAvatarRevive = nullptr;
+    MonoMethod* methodPlayerCosmeticsSetupCosmetics = nullptr;
+    MonoMethod* methodPlayerCosmeticsSetupColors = nullptr;
 
     bool UnlockAllCosmetics(int* outUnlockedCount = nullptr, int* outTotalCount = nullptr);
     bool GetCosmeticStats(int& unlockedCount, int& totalCount);
     void SetAnimationSpeed(float targetSpeed);
     bool ReviveLocalPlayer();
     bool HealLocalPlayer(int healAmount = 0);
+
+    uintptr_t GetLocalPlayerAvatar();
+    bool CopyPlayerCosmetics(uintptr_t targetAvatarAddress);
+    bool CopyPlayerColors(uintptr_t targetAvatarAddress);
+    // Executed by PlayerController.Update on Unity's main thread.
+    bool QueueCosmeticChange(uintptr_t target, bool cosmetics, bool colors);
+    bool TakeCosmeticResult(bool& success, std::string& message);
+    std::vector<ServerPlayerInfo> GetServerPlayers();
 
 private:
     GameState() = default;

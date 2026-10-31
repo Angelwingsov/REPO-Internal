@@ -19,6 +19,8 @@ public:
     MonoImage* GetAppImage() const { return m_AppImage; }
     MonoImage* GetCoreImage() const { return m_CoreImage; }
     MonoImage* GetPhysicsImage() const { return m_PhysicsImage; }
+    MonoImage* GetPhotonImage() const { return m_PhotonImage; }
+    MonoImage* GetTextMeshProImage() const { return m_TextMeshProImage; }
 
     MonoClass* FindClass(MonoImage* image, const char* nameSpace, const char* name);
     MonoMethod* FindMethod(MonoClass* klass, const char* name, int paramCount = 0);
@@ -29,6 +31,7 @@ public:
     bool GetStaticBool(MonoClass* klass, const char* name, bool defaultVal = false);
 
     MonoObject* InvokeMethod(MonoMethod* method, void* obj, void** params = nullptr, MonoObject** exc = nullptr);
+    bool TryInvokeMethod(MonoMethod* method, void* obj, void** params = nullptr);
     void* SafeUnboxRaw(MonoObject* obj);
 
     template <typename T>
@@ -74,6 +77,8 @@ private:
     MonoImage* m_AppImage = nullptr;
     MonoImage* m_CoreImage = nullptr;
     MonoImage* m_PhysicsImage = nullptr;
+    MonoImage* m_PhotonImage = nullptr;
+    MonoImage* m_TextMeshProImage = nullptr;
 };
 
 }

@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdarg>
 #include <ctime>
+#include <share.h>
 
 namespace Core {
 
@@ -31,7 +32,8 @@ void Logger::Initialize(const char* consoleTitle) {
         }
     }
 
-    fopen_s(&s_LogFile, "repo_cheat.log", "w");
+    // Allow diagnostics to be read while the game is running.
+    s_LogFile = _fsopen("repo_cheat.log", "w", _SH_DENYNO);
     s_PrevExceptionFilter = SetUnhandledExceptionFilter(UnhandledExceptionFilter);
 
     s_Initialized = true;

@@ -12,3 +12,4 @@
 .vs/
 bin/
 build/
+/dx11_hook_x64.dll

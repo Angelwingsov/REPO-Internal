@@ -215,6 +215,7 @@
     <ClCompile Include="src\features\player.cpp" />
     <ClCompile Include="src\features\thirdperson.cpp" />
     <ClCompile Include="src\features\spectatorlist.cpp" />
+    <ClCompile Include="src\features\removals.cpp" />
     <ClCompile Include="src\game\entities.cpp" />
     <ClCompile Include="src\game\state.cpp" />
     <ClCompile Include="src\hook\dx11hook.cpp" />
@@ -248,6 +249,7 @@
     <ClInclude Include="src\features\player.h" />
     <ClInclude Include="src\features\thirdperson.h" />
     <ClInclude Include="src\features\spectatorlist.h" />
+    <ClInclude Include="src\features\removals.h" />
     <ClInclude Include="src\game\entities.h" />
     <ClInclude Include="src\game\state.h" />
     <ClInclude Include="src\hook\dx11hook.h" />
