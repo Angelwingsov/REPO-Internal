@@ -1,0 +1,319 @@
+#include "entities.h"
+#include "state.h"
+#include "unity/unity_engine.h"
+#include "memory/memory.h"
+#include "mono/mono_bridge.h"
+
+namespace Game {
+
+EntityManager& EntityManager::Get() {
+    static EntityManager instance;
+    return instance;
+}
+
+void EntityManager::CollectMonsters(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, std::vector<MonsterEntity>& out) {
+    out.clear();
+    auto& gameState = GameState::Get();
+    if (!gameState.klassEnemyDirector || !camera) return;
+
+    uintptr_t enemyDirector = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassEnemyDirector, "instance"));
+    if (!enemyDirector || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(enemyDirector))) {
+        return;
+    }
+
+    uintptr_t enemiesList = 0;
+    if (!Memory::ReadPtr(enemyDirector + gameState.offsets.EnemyDirector_enemiesSpawned, enemiesList)) {
+        return;
+    }
+
+    std::vector<uintptr_t> enemyParents;
+    if (!Memory::ReadMonoList(enemiesList, enemyParents)) {
+        return;
+    }
+
+    auto& engine = Unity::Engine::Get();
+
+    for (uintptr_t enemyParent : enemyParents) {
+        if (!enemyParent || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(enemyParent))) {
+            continue;
+        }
+
+        uint8_t spawned = 0;
+        Memory::ReadByte(enemyParent + gameState.offsets.EnemyParent_Spawned, spawned);
+        if (!spawned) continue;
+
+        uintptr_t enemy = 0;
+        Memory::ReadPtr(enemyParent + gameState.offsets.EnemyParent_Enemy, enemy);
+        if (!enemy || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(enemy))) {
+            continue;
+        }
+
+        uintptr_t centerTransform = 0;
+        Memory::ReadPtr(enemy + gameState.offsets.Enemy_CenterTransform, centerTransform);
+
+        Unity::Vector3 worldPos;
+        if (centerTransform && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(centerTransform))) {
+            worldPos = engine.GetTransformPosition(reinterpret_cast<MonoObject*>(centerTransform));
+        } else {
+            worldPos = engine.GetComponentPosition(reinterpret_cast<MonoObject*>(enemy));
+        }
+
+        if (!worldPos.IsValid() || worldPos.IsZero()) continue;
+
+        float dist = refPos.Distance(worldPos);
+        if (dist > maxDist || dist < 0.1f) continue;
+
+        Unity::Vector3 screenPos;
+        if (!engine.WorldToScreen(camera, worldPos, screenPos, screenW, screenH)) continue;
+
+        MonsterEntity monster;
+        monster.parentAddress = enemyParent;
+        monster.enemyAddress = enemy;
+        monster.worldPosition = worldPos;
+        monster.screenPosition = screenPos;
+        monster.distance = dist;
+        monster.isSpawned = true;
+
+        uintptr_t mName = 0;
+        if (Memory::ReadPtr(enemyParent + gameState.offsets.EnemyParent_enemyName, mName) && mName) {
+            monster.name = Mono::Bridge::Get().ReadMonoString(reinterpret_cast<MonoString*>(mName));
+        }
+        if (monster.name.empty()) monster.name = "Monster";
+
+        Memory::ReadInt(enemy + gameState.offsets.Enemy_CurrentState, monster.currentState);
+        uint8_t stunned = 0;
+        Memory::ReadByte(enemy + gameState.offsets.Enemy_Stunned, stunned);
+        monster.isStunned = (stunned != 0);
+
+        monster.isChasing = (monster.currentState == 3 || monster.currentState == 4 || monster.currentState == 5);
+
+        Unity::Vector3 topWorld = worldPos;
+        topWorld.y += 0.9f;
+        Unity::Vector3 bottomWorld = worldPos;
+        bottomWorld.y -= 0.9f;
+
+        if (engine.WorldToScreen(camera, topWorld, monster.topScreenPosition, screenW, screenH) &&
+            engine.WorldToScreen(camera, bottomWorld, monster.bottomScreenPosition, screenW, screenH)) {
+            monster.hasScreenBox = true;
+        }
+
+        out.push_back(monster);
+    }
+}
+
+void EntityManager::CollectPlayers(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, bool hideLocal, std::vector<PlayerEntity>& out) {
+    out.clear();
+    auto& gameState = GameState::Get();
+    if (!gameState.klassGameDirector || !camera) return;
+
+    uintptr_t gameDirector = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassGameDirector, "instance"));
+    if (!gameDirector || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(gameDirector))) {
+        return;
+    }
+
+    uintptr_t playerList = 0;
+    if (!Memory::ReadPtr(gameDirector + gameState.offsets.GameDirector_PlayerList, playerList)) {
+        return;
+    }
+
+    std::vector<uintptr_t> playerAvatars;
+    if (!Memory::ReadMonoList(playerList, playerAvatars)) {
+        return;
+    }
+
+    auto& engine = Unity::Engine::Get();
+
+    for (uintptr_t avatar : playerAvatars) {
+        if (!avatar || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar))) {
+            continue;
+        }
+
+        uint8_t isLocal = 0;
+        Memory::ReadByte(avatar + gameState.offsets.PlayerAvatar_isLocal, isLocal);
+        if (isLocal && hideLocal) {
+            continue;
+        }
+
+        uint8_t deadSet = 0;
+        Memory::ReadByte(avatar + gameState.offsets.PlayerAvatar_deadSet, deadSet);
+
+        uintptr_t playerTransform = 0;
+        Memory::ReadPtr(avatar + gameState.offsets.PlayerAvatar_playerTransform, playerTransform);
+
+        Unity::Vector3 worldPos;
+        if (playerTransform && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(playerTransform))) {
+            worldPos = engine.GetTransformPosition(reinterpret_cast<MonoObject*>(playerTransform));
+        } else {
+            worldPos = engine.GetComponentPosition(reinterpret_cast<MonoObject*>(avatar));
+        }
+
+        if (!worldPos.IsValid() || worldPos.IsZero()) continue;
+
+        float dist = refPos.Distance(worldPos);
+        if (dist > maxDist || dist < 0.1f) continue;
+
+        Unity::Vector3 screenPos;
+        if (!engine.WorldToScreen(camera, worldPos, screenPos, screenW, screenH)) continue;
+
+        PlayerEntity player;
+        player.address = avatar;
+        player.worldPosition = worldPos;
+        player.screenPosition = screenPos;
+        player.distance = dist;
+        player.isLocal = (isLocal != 0);
+        player.isDead = (deadSet != 0);
+
+        uintptr_t mName = 0;
+        if (Memory::ReadPtr(avatar + gameState.offsets.PlayerAvatar_playerName, mName) && mName) {
+            player.name = Mono::Bridge::Get().ReadMonoString(reinterpret_cast<MonoString*>(mName));
+        }
+        if (player.name.empty()) {
+            player.name = player.isLocal ? "Local Player" : "Player";
+        }
+
+        uintptr_t healthObj = 0;
+        if (Memory::ReadPtr(avatar + gameState.offsets.PlayerAvatar_playerHealth, healthObj) && healthObj &&
+            Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(healthObj))) {
+            Memory::ReadInt(healthObj + gameState.offsets.PlayerHealth_health, player.health);
+            Memory::ReadInt(healthObj + gameState.offsets.PlayerHealth_maxHealth, player.maxHealth);
+            if (player.maxHealth <= 0) player.maxHealth = 100;
+        } else {
+            player.health = player.isDead ? 0 : 100;
+            player.maxHealth = 100;
+        }
+
+        Unity::Vector3 topWorld = worldPos;
+        topWorld.y += 0.9f;
+        Unity::Vector3 bottomWorld = worldPos;
+        bottomWorld.y -= 0.9f;
+
+        if (engine.WorldToScreen(camera, topWorld, player.topScreenPosition, screenW, screenH) &&
+            engine.WorldToScreen(camera, bottomWorld, player.bottomScreenPosition, screenW, screenH)) {
+            player.hasScreenBox = true;
+        }
+
+        out.push_back(player);
+    }
+}
+
+void EntityManager::CollectValuables(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, bool hideExtracted, float minDollar, std::vector<ValuableEntity>& out) {
+    out.clear();
+    auto& gameState = GameState::Get();
+    if (!gameState.klassValuableDirector || !camera) return;
+
+    uintptr_t valuableDirector = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassValuableDirector, "instance"));
+    if (!valuableDirector || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(valuableDirector))) {
+        return;
+    }
+
+    uintptr_t valList = 0;
+    if (!Memory::ReadPtr(valuableDirector + gameState.offsets.ValuableDirector_valuableList, valList)) {
+        return;
+    }
+
+    std::vector<uintptr_t> valuables;
+    if (!Memory::ReadMonoList(valList, valuables)) {
+        return;
+    }
+
+    auto& engine = Unity::Engine::Get();
+
+    for (uintptr_t valuable : valuables) {
+        if (!valuable || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(valuable))) {
+            continue;
+        }
+
+        if (hideExtracted) {
+            uint8_t committed = 0;
+            Memory::ReadByte(valuable + gameState.offsets.ValuableObject_committedToExtraction, committed);
+            if (committed) continue;
+        }
+
+        float dollarValue = 0.0f;
+        Memory::ReadFloat(valuable + gameState.offsets.ValuableObject_dollarValueCurrent, dollarValue);
+        if (dollarValue <= 0.0f) {
+            Memory::ReadFloat(valuable + gameState.offsets.ValuableObject_dollarValueOriginal, dollarValue);
+        }
+
+        if (dollarValue < minDollar) continue;
+
+        Unity::Vector3 worldPos = engine.GetComponentPosition(reinterpret_cast<MonoObject*>(valuable));
+        if (!worldPos.IsValid() || worldPos.IsZero()) continue;
+
+        float dist = refPos.Distance(worldPos);
+        if (dist > maxDist || dist < 0.1f) continue;
+
+        Unity::Vector3 screenPos;
+        if (!engine.WorldToScreen(camera, worldPos, screenPos, screenW, screenH)) continue;
+
+        ValuableEntity entity;
+        entity.address = valuable;
+        entity.worldPosition = worldPos;
+        entity.screenPosition = screenPos;
+        entity.distance = dist;
+        entity.dollarValue = dollarValue;
+        entity.name = engine.GetObjectName(reinterpret_cast<MonoObject*>(valuable));
+        if (entity.name.empty()) entity.name = "Valuable";
+
+        out.push_back(entity);
+    }
+}
+
+void EntityManager::CollectItems(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, std::vector<ItemEntity>& out) {
+    out.clear();
+    auto& gameState = GameState::Get();
+    if (!gameState.klassItemManager || !camera) return;
+
+    uintptr_t itemMgr = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassItemManager, "instance"));
+    if (!itemMgr || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(itemMgr))) {
+        return;
+    }
+
+    uintptr_t spawnedItemsList = 0;
+    if (!Memory::ReadPtr(itemMgr + gameState.offsets.ItemManager_spawnedItems, spawnedItemsList)) {
+        return;
+    }
+
+    std::vector<uintptr_t> items;
+    if (!Memory::ReadMonoList(spawnedItemsList, items)) {
+        return;
+    }
+
+    auto& engine = Unity::Engine::Get();
+
+    for (uintptr_t itemAttr : items) {
+        if (!itemAttr || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(itemAttr))) {
+            continue;
+        }
+
+        Unity::Vector3 worldPos = engine.GetComponentPosition(reinterpret_cast<MonoObject*>(itemAttr));
+        if (!worldPos.IsValid() || worldPos.IsZero()) continue;
+
+        float dist = refPos.Distance(worldPos);
+        if (dist > maxDist || dist < 0.1f) continue;
+
+        Unity::Vector3 screenPos;
+        if (!engine.WorldToScreen(camera, worldPos, screenPos, screenW, screenH)) continue;
+
+        ItemEntity entity;
+        entity.address = itemAttr;
+        entity.worldPosition = worldPos;
+        entity.screenPosition = screenPos;
+        entity.distance = dist;
+
+        uintptr_t mName = 0;
+        Memory::ReadPtr(itemAttr + gameState.offsets.ItemAttributes_itemName, mName);
+        if (mName) entity.name = Mono::Bridge::Get().ReadMonoString(reinterpret_cast<MonoString*>(mName));
+        if (entity.name.empty()) {
+            Memory::ReadPtr(itemAttr + gameState.offsets.ItemAttributes_instanceName, mName);
+            if (mName) entity.name = Mono::Bridge::Get().ReadMonoString(reinterpret_cast<MonoString*>(mName));
+        }
+        if (entity.name.empty()) entity.name = "Item";
+
+        Memory::ReadInt(itemAttr + gameState.offsets.ItemAttributes_value, entity.value);
+
+        out.push_back(entity);
+    }
+}
+
+}

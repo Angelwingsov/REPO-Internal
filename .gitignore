@@ -1,0 +1,14 @@
+*.obj
+*.log
+*.pdb
+*.exp
+*.lib
+*.iobj
+*.ipdb
+*.user
+*.suo
+*.bak
+*.dll.bak
+.vs/
+bin/
+build/
