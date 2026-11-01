@@ -50,7 +50,7 @@ void Runtime::Tick() {
             if (stop) {
                 config.godMode.enabled = config.noclip.enabled = config.movement.speedEnabled = false;
                 config.movement.infiniteStamina = config.movement.infiniteStrength = false;
-                config.movement.extendGrabRange = config.movement.superJump = config.movement.noTumble = false;
+                config.movement.extendGrabRange = config.movement.grabThroughWalls = config.movement.superJump = config.movement.noTumble = false;
                 config.thirdPerson.enabled = false;
                 config.troll = Core::TrollConfig();
                 config.menu.isVisible = false;

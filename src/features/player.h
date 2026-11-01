@@ -32,6 +32,9 @@ private:
     float m_OriginalGrabReleaseDistance = 8.0f;
     float m_OriginalMaxDistanceFromPlayer = 2.5f;
 
+    bool m_GrabThroughWallsSaved = false;
+    int32_t m_OriginalPhysGrabberMask = 0;
+
     bool m_StrengthSaved = false;
     float m_OriginalGrabStrength = 1.0f;
     float m_OriginalThrowStrength = 0.0f;

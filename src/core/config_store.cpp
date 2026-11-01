@@ -107,6 +107,7 @@ Schema Bind(Config& c) {
     s.Add("movement.strengthMultiplier", c.movement.strengthMultiplier, 5, 100);
     s.Add("movement.extendGrabRange", c.movement.extendGrabRange);
     s.Add("movement.grabRange", c.movement.grabRange, 4, 30);
+    s.Add("movement.grabThroughWalls", c.movement.grabThroughWalls);
     s.Add("movement.superJump", c.movement.superJump);
     s.Add("movement.jumpMultiplier", c.movement.jumpMultiplier, 1, 4);
     s.Add("movement.noTumble", c.movement.noTumble);

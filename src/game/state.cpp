@@ -197,6 +197,8 @@ bool GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPhysGrabber, "grabRange", offsets.PhysGrabber_grabRange, 0x005C);
     RESOLVE_FIELD(klassPhysGrabber, "grabReleaseDistance", offsets.PhysGrabber_grabReleaseDistance, 0x0060);
     RESOLVE_FIELD(klassPhysGrabber, "maxDistanceFromPlayer", offsets.PhysGrabber_maxDistanceFromPlayer, 0x0068);
+    RESOLVE_FIELD(klassPhysGrabber, "overrideAlwaysGrabbableTimer", offsets.PhysGrabber_overrideAlwaysGrabbableTimer, 0x0144);
+    RESOLVE_FIELD(klassPhysGrabber, "mask", offsets.PhysGrabber_mask, 0x0158);
     RESOLVE_FIELD(klassPhysGrabber, "overrideGrabStrength", offsets.PhysGrabber_overrideGrabStrength, 0x0218);
     RESOLVE_FIELD(klassPhysGrabber, "overrideGrabStrengthTimer", offsets.PhysGrabber_overrideGrabStrengthTimer, 0x021C);
     RESOLVE_FIELD(klassPhysGrabber, "climbForceMultiplier", offsets.PhysGrabber_climbForceMultiplier, 0x0018);

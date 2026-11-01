@@ -102,6 +102,8 @@ struct Offsets {
     int PhysGrabber_grabRange = 0x005C;
     int PhysGrabber_grabReleaseDistance = 0x0060;
     int PhysGrabber_maxDistanceFromPlayer = 0x0068;
+    int PhysGrabber_overrideAlwaysGrabbableTimer = 0x0144;
+    int PhysGrabber_mask = 0x0158;
     int PhysGrabber_overrideGrabStrength = 0x0218;
     int PhysGrabber_overrideGrabStrengthTimer = 0x021C;
     int PhysGrabber_climbForceMultiplier = 0x0018;

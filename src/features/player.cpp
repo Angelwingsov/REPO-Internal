@@ -78,6 +78,7 @@ void PlayerMods::Update() {
         m_LastPlayerCtrl = 0;
         m_LastGrabbedObject = 0;
         m_GrabRangeSaved = false;
+        m_GrabThroughWallsSaved = false;
         m_StrengthSaved = false;
         m_JumpForceSaved = false;
         m_SpeedSaved = false;
@@ -217,6 +218,7 @@ void PlayerMods::Update() {
             if (m_LastPhysGrabber != physGrabber) {
                 m_LastPhysGrabber = physGrabber;
                 m_GrabRangeSaved = false;
+                m_GrabThroughWallsSaved = false;
                 m_StrengthSaved = false;
                 m_LastGrabbedObject = 0;
             }
@@ -299,6 +301,31 @@ void PlayerMods::Update() {
                     Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_grabReleaseDistance, m_OriginalGrabReleaseDistance);
                     Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_maxDistanceFromPlayer, m_OriginalMaxDistanceFromPlayer);
                     m_GrabRangeSaved = false;
+                }
+            }
+
+            if (cfg.movement.grabThroughWalls) {
+                if (!m_GrabThroughWallsSaved) {
+                    int32_t currentMask = 0;
+                    if (Memory::Read<int32_t>(physGrabber + gameState.offsets.PhysGrabber_mask, currentMask) && currentMask != 0) {
+                        m_OriginalPhysGrabberMask = currentMask;
+                        m_GrabThroughWallsSaved = true;
+                    }
+                }
+
+                if (m_GrabThroughWallsSaved) {
+                    int32_t penetrativeMask = m_OriginalPhysGrabberMask & ~(1 << 0);
+                    Memory::Write<int32_t>(physGrabber + gameState.offsets.PhysGrabber_mask, penetrativeMask);
+
+                    uintptr_t grabbedObj = 0;
+                    if (Memory::Read<uintptr_t>(physGrabber + gameState.offsets.PhysGrabber_grabbedPhysGrabObject, grabbedObj) && grabbedObj) {
+                        Memory::WriteFloat(physGrabber + gameState.offsets.PhysGrabber_overrideAlwaysGrabbableTimer, 0.25f);
+                    }
+                }
+            } else {
+                if (m_GrabThroughWallsSaved) {
+                    Memory::Write<int32_t>(physGrabber + gameState.offsets.PhysGrabber_mask, m_OriginalPhysGrabberMask);
+                    m_GrabThroughWallsSaved = false;
                 }
             }
         }

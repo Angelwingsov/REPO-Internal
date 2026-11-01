@@ -10,7 +10,7 @@
 
 int main() {
     auto& cfg=Core::Config::Global();cfg.ResetToDefaults();
-    cfg.godMode.enabled=true;cfg.movement.speedMultiplier=4.25f;cfg.noclip.keyMode=3;
+    cfg.godMode.enabled=true;cfg.movement.speedMultiplier=4.25f;cfg.movement.grabThroughWalls=true;cfg.noclip.keyMode=3;
     cfg.fullbright.enabled=true;cfg.fullbright.brightness=2.25f;cfg.removals.noFog=false;
     cfg.player.color[1]=.12345f;cfg.menu.color[0]=37;cfg.menu.toggleKey=VK_F6;
     cfg.visual.crosshairSize=12;cfg.troll.animSpeed=1.75f;

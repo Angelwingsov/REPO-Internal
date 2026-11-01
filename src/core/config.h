@@ -92,6 +92,7 @@ struct MovementConfig {
     float strengthMultiplier = 50.0f;
     bool extendGrabRange = false;
     float grabRange = 15.0f;
+    bool grabThroughWalls = false;
 
     bool superJump = false;
     float jumpMultiplier = 1.8f;
