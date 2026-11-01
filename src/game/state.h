@@ -9,6 +9,8 @@
 namespace Game {
 
 struct Offsets {
+    int PlayerAvatarVisuals_meshParent = -1;
+    int PlayerAvatarVisuals_headTop = -1;
     int EnemyDirector_enemiesSpawned = 0x0108;
     int EnemyParent_enemyName = 0x0010;
     int EnemyParent_Spawned = 0x0021;
@@ -114,7 +116,6 @@ struct Offsets {
     int PlayerCosmetics_colorsEquipped = 0x0050;
     int PlayerCosmetics_photonView = 0x0018;
 
-
     int MetaManager_cosmeticUnlocks = 0x0030;
     int MetaManager_cosmeticAssets = 0x0070;
 
@@ -213,7 +214,7 @@ public:
     uintptr_t GetLocalPlayerAvatar();
     bool CopyPlayerCosmetics(uintptr_t targetAvatarAddress);
     bool CopyPlayerColors(uintptr_t targetAvatarAddress);
-    // Executed by PlayerController.Update on Unity's main thread.
+
     bool QueueCosmeticChange(uintptr_t target, bool cosmetics, bool colors);
     bool TakeCosmeticResult(bool& success, std::string& message);
     std::vector<ServerPlayerInfo> GetServerPlayers();

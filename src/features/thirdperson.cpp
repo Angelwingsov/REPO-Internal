@@ -1,3 +1,4 @@
+#include "core/keybind.h"
 #include "thirdperson.h"
 #include "core/config.h"
 #include "core/logger.h"
@@ -27,14 +28,7 @@ void ThirdPerson::Update() {
     if (cfg.thirdPerson.enabled) {
         if (cfg.thirdPerson.toggleKey > 0) {
             bool isDown = Hook::InputHook::IsKeyHeld(cfg.thirdPerson.toggleKey);
-            if (cfg.thirdPerson.keyMode == 0) {
-                shouldBeActive = isDown;
-            } else {
-                if (isDown && !m_PrevKeyDown) {
-                    m_ActiveState = !m_ActiveState;
-                }
-                shouldBeActive = m_ActiveState;
-            }
+            shouldBeActive = Core::EvaluateKeybind(cfg.thirdPerson.keyMode, isDown, m_PrevKeyDown, m_ActiveState);
             m_PrevKeyDown = isDown;
         } else {
             shouldBeActive = true;

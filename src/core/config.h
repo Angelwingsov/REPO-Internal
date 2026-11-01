@@ -190,6 +190,7 @@ struct MenuConfig {
     DWORD toggleKey = VK_DELETE;
     bool blockInputWhenOpen = true;
     bool requestUnload = false;
+    int color[4] = {163, 212, 31, 255};
 };
 
 struct Diagnostics {

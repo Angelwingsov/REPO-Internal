@@ -209,6 +209,7 @@
   <ItemGroup>
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\core\config.cpp" />
+    <ClCompile Include="src\core\config_store.cpp" />
     <ClCompile Include="src\core\logger.cpp" />
     <ClCompile Include="src\features\esp.cpp" />
     <ClCompile Include="src\features\godmode.cpp" />
@@ -226,6 +227,8 @@
     <ClCompile Include="src\mono\mono_bridge.cpp" />
     <ClCompile Include="src\ui\menu.cpp" />
     <ClCompile Include="src\ui\theme.cpp" />
+    <ClCompile Include="src\ui\original\framework.cpp" />
+    <ClCompile Include="src\ui\original\renderer.cpp" />
     <ClCompile Include="src\unity\unity_engine.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
     <ClCompile Include="imgui\imgui_demo.cpp">
@@ -244,6 +247,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\config.h" />
+    <ClInclude Include="src\core\config_store.h" />
     <ClInclude Include="src\core\logger.h" />
     <ClInclude Include="src\features\esp.h" />
     <ClInclude Include="src\features\godmode.h" />
@@ -253,6 +257,7 @@
     <ClInclude Include="src\features\spectatorlist.h" />
     <ClInclude Include="src\features\removals.h" />
     <ClInclude Include="src\game\entities.h" />
+    <ClInclude Include="src\game\player_bounds.h" />
     <ClInclude Include="src\game\state.h" />
     <ClInclude Include="src\game\runtime.h" />
     <ClInclude Include="src\core\snapshot.h" />
@@ -263,7 +268,13 @@
     <ClInclude Include="src\mono\mono_bridge.h" />
     <ClInclude Include="src\mono\mono_types.h" />
     <ClInclude Include="src\ui\menu.h" />
+    <ClInclude Include="src\core\keybind.h" />
     <ClInclude Include="src\ui\theme.h" />
+    <ClInclude Include="src\ui\original\framework.h" />
+    <ClInclude Include="src\ui\original\renderer.h" />
+    <ClInclude Include="src\ui\original\platform.h" />
+    <ClInclude Include="src\ui\original\color.h" />
+    <ClInclude Include="src\ui\original\bridge.h" />
     <ClInclude Include="src\unity\unity_engine.h" />
     <ClInclude Include="src\unity\unity_math.h" />
     <ClInclude Include="imgui\imconfig.h" />
@@ -286,6 +297,13 @@
   <ItemGroup>
     <None Include="README.md" />
     <None Include=".gitignore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="src\ui\assets\gui.rc" />
+    <None Include="src\ui\assets\background.png" />
+    <None Include="src\ui\assets\tab_icons.ttf" />
+    <None Include="src\ui\assets\legit_tab_icons.ttf" />
+    <None Include="src\ui\assets\keybinds.ttf" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

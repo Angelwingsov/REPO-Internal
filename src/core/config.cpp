@@ -37,10 +37,7 @@ void Config::ResetToDefaults() {
     removals = RemovalsConfig();
     fullbright = FullbrightConfig();
     visual = VisualConfig();
-    menu.isVisible = true;
-    menu.toggleKey = VK_DELETE;
-    menu.blockInputWhenOpen = true;
-    menu.requestUnload = false;
+    menu = MenuConfig();
 }
 
 }

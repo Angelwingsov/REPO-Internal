@@ -1,662 +1,363 @@
 #include "menu.h"
-#include "imgui/imgui.h"
+#include "original/framework.h"
+#include "original/renderer.h"
+#include "original/bridge.h"
 #include "core/config.h"
-#include "mono/mono_bridge.h"
+#include "core/config_store.h"
 #include "game/state.h"
 #include "game/runtime.h"
-#include "features/player.h"
-#include "features/godmode.h"
-#include "features/removals.h"
-#include "hook/input.h"
-#include <vector>
+#include <algorithm>
 #include <string>
+#include <vector>
+#include <initializer_list>
+#include <unordered_map>
 
+using namespace IdaLovesMe;
 namespace UI {
+namespace {
+int currentTab = 0;
+float alpha = 0;
 
-static void DrawKeybindWidget(const char* label, int& key, bool& isBinding, bool& waitRelease, float width = 140.0f) {
-    char btnText[64];
-    if (isBinding) {
-        strcpy_s(btnText, "[ Press Key/Wheel... ]");
+void KeyBind(const char* id, int& key, int& mode) {
+    int sourceMode = mode == 0 ? 1 : mode == 1 ? 2 : mode == 2 ? 0 : 3;
+    int previous = sourceMode;
+    ui::KeyBind(id, &key, &sourceMode);
+    if (sourceMode != previous) mode = sourceMode == 1 ? 0 : sourceMode == 2 ? 1 : sourceMode == 0 ? 2 : 3;
+}
+void Color(const char* id, float* rgba) {
+    int color[4]; for(int i=0;i<4;++i) color[i]=static_cast<int>(std::clamp(rgba[i],0.f,1.f)*255+.5f);
+    int before[4]; std::copy(color,color+4,before);
+    ui::ColorPicker(id,color);
+    for(int i=0;i<4;++i) if(color[i]!=before[i]) rgba[i]=color[i]/255.f;
+}
+void Status(const std::string& text) {
 
-        ImGuiIO& io = ImGui::GetIO();
-        if (waitRelease) {
-            if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
-                waitRelease = false;
-            }
-        } else {
-            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-                isBinding = false;
-            }
-            else if (io.MouseWheel > 0.1f || Hook::InputHook::ConsumeWheelUp()) {
-                key = VK_MWHEELUP;
-                isBinding = false;
-                io.MouseWheel = 0.0f;
-            }
-            else if (io.MouseWheel < -0.1f || Hook::InputHook::ConsumeWheelDown()) {
-                key = VK_MWHEELDOWN;
-                isBinding = false;
-                io.MouseWheel = 0.0f;
-            }
-            else if (GetAsyncKeyState(VK_MBUTTON) & 0x8000) {
-                key = VK_MBUTTON;
-                isBinding = false;
-            }
-            else if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
-                key = VK_RBUTTON;
-                isBinding = false;
-            }
-            else if (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) {
-                key = VK_XBUTTON1;
-                isBinding = false;
-            }
-            else if (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) {
-                key = VK_XBUTTON2;
-                isBinding = false;
-            }
-            else {
-                for (int k = VK_BACK; k <= 0xFE; ++k) {
-                    if (k == VK_ESCAPE || k == VK_MWHEELUP || k == VK_MWHEELDOWN) continue;
-                    if (GetAsyncKeyState(k) & 0x8000) {
-                        key = k;
-                        isBinding = false;
-                        break;
-                    }
-                }
-            }
+    float width=ui::GetWindowSize().x-64;
+    std::string line,word;
+    auto flush=[&] { if(!line.empty()) {ui::Label(line.c_str()); line.clear();} };
+    for(char c:text+" ") {
+        if(c==' ' || c=='\n') {
+            std::string next=line.empty()?word:line+" "+word;
+            if(Render::Draw->GetTextSize(Render::Fonts::Verdana,next.c_str()).x>width) flush();
+            if(!word.empty()) {if(!line.empty()) line+=' ';line+=word;word.clear();}
+            if(c=='\n') flush();
+        } else word+=c;
+    }
+    flush();
+}
+void EspOptions(bool& box, bool& corners, bool& lines, bool& name, bool& distance) {
+    bool oldBox=box,oldCorners=corners;
+    ui::Checkbox("Box",&box);
+    ui::Checkbox("Corner box",&corners);
+    if(box&&!oldBox) corners=false;
+    if(corners&&!oldCorners) box=false;
+    ui::Checkbox("Snaplines",&lines);
+    ui::Checkbox("Name",&name);
+    ui::Checkbox("Distance",&distance);
+}
+void Configs() {
+    auto& store=Core::ConfigStore::Get();
+    static std::vector<std::string> names;
+    static std::string selected,status,pendingDelete;
+    static char name[64]{};
+    static bool initialized=false;
+    static int listTop=0;
+    auto refresh=[&] {
+        std::string error;
+        if(!store.List(names,error)) status=error;
+        if(std::find(names.begin(),names.end(),selected)==names.end()) selected.clear();
+    };
+    if(!initialized) {refresh();initialized=true;}
+    if(ui::BeginListbox("##ConfigList")) {
+        auto* list=ui::GetCurrentWindow();
+        int last=(std::max)(0,static_cast<int>(names.size())-7);
+        if(ui::IsInsideWindow(list)) listTop-=static_cast<int>(Globals::Gui_Ctx->MouseWheel*3);
+        listTop=std::clamp(listTop,0,last);
+        for(int i=listTop;i<(std::min)(listTop+7,static_cast<int>(names.size()));++i) {
+            const auto& entry=names[i];
+            if(ui::Selectable(entry.c_str(),entry==selected)) {selected=entry;pendingDelete.clear();}
         }
+        if(last>0) {
+            int opacity=Globals::Gui_Ctx->MenuAlpha;
+            Render::Draw->FilledRect(list->Pos+Vec2(list->Size.x-6,1),Vec2(5,list->Size.y-2),ImColor(40,40,40,opacity));
+            float thumb=(list->Size.y-4)*7.f/static_cast<float>(names.size());
+            Render::Draw->FilledRect(list->Pos+Vec2(list->Size.x-5,2+(list->Size.y-4-thumb)*listTop/last),Vec2(3,thumb),ImColor(65,65,65,opacity));
+        }
+        ui::EndListbox();
+    }
+    ui::InputText("##ConfigName",name);
+    if(ui::Button("Refresh")) {refresh();pendingDelete.clear();}
+    if(ui::Button("Create")) {
+        std::string error;
+        if(store.Save(name,false,error)) {selected=name;refresh();status="Config created.";pendingDelete.clear();}
+        else status=error;
+    }
+    auto action=[&](bool load) {
+        if(selected.empty()) {status="Select a config first.";return;}
+        std::string error;
+        bool ok=load?store.Load(selected,error):store.Save(selected,true,error);
+        status=ok?(load?"Config loaded.":"Config saved."):error;
+        pendingDelete.clear();
+    };
+    if(ui::Button("Save")) action(false);
+    if(ui::Button("Load")) action(true);
+    if(ui::Button("Delete")) {
+        if(selected.empty()) status="Select a config first.";
+        else {pendingDelete=selected;status="Click Confirm delete to remove the selected config.";}
+    }
+    if(!pendingDelete.empty() && ui::Button("Confirm delete")) {
+        std::string error;
+        status=store.Delete(pendingDelete,error)?"Config deleted.":error;
+        pendingDelete.clear();refresh();
+    }
+    if(!status.empty()) Status(status);
+}
+struct RemovalOption {
+    const char* label;
+    bool* enabled;
+};
+void RemovalGroup(const char* label,std::initializer_list<RemovalOption> options) {
+
+    std::vector<const char*> names;
+    std::unordered_map<int,bool> selected;
+    int index=0;
+    for(const auto& option:options) {names.push_back(option.label);selected[index++]=*option.enabled;}
+    if(ui::MultiSelect(label,&selected,names)) {
+        index=0;
+        for(const auto& option:options) *option.enabled=selected[index++];
+    }
+}
+void Cosmetics(Core::Config& cfg) {
+    auto& gs=Game::GameState::Get();
+    std::string result;
+    if(gs.TakeCosmeticResult(cfg.cosmeticParser.actionSuccess,result)) {
+        cfg.cosmeticParser.hasStatus=true;
+        sprintf_s(cfg.cosmeticParser.statusMessage,"%s",result.c_str());
+    }
+    auto state=Game::Runtime::Get().ReadState();
+    if(GetTickCount64()-state.timestamp>1000) state.players.clear();
+    std::vector<Game::ServerPlayerInfo> players;
+    for(auto& p:state.players) if(!p.isLocal && players.size()<32) players.push_back(p);
+    if(players.empty()) {
+        cfg.cosmeticParser.selectedPlayerAddress=0;
+        cfg.cosmeticParser.selectedPlayerIdx=-1;
+        Status("No players detected. Enter a lobby or game.");
     } else {
-        sprintf_s(btnText, "Key: [ %s ]##%s", Features::PlayerMods::GetKeyName(key), label);
+        std::vector<std::string> names={"Select player"};
+        int index=0;
+        for(size_t i=0;i<players.size();++i) {
+            names.push_back(players[i].name);
+            if(players[i].address==cfg.cosmeticParser.selectedPlayerAddress) index=static_cast<int>(i)+1;
+        }
+        ui::SingleSelect("Target player",&index,names);
+        uintptr_t target=index>0?players[index-1].address:0;
+        cfg.cosmeticParser.selectedPlayerAddress=target;
+        cfg.cosmeticParser.selectedPlayerIdx=index-1;
+        auto copy=[&](const char* label,bool cosmetics,bool colors) {
+            if(ui::Button(label) && target) {
+                bool queued=gs.QueueCosmeticChange(target,cosmetics,colors);
+                cfg.cosmeticParser.hasStatus=true;cfg.cosmeticParser.actionSuccess=false;
+                sprintf_s(cfg.cosmeticParser.statusMessage,"%s",queued?"Applying on game update...":"Game update unavailable.");
+            }
+        };
+        copy("Copy cosmetics + colors",true,true);
+        copy("Copy cosmetics",true,false);
+        copy("Copy colors",false,true);
     }
-
-    if (ImGui::Button(btnText, ImVec2(width, 24))) {
-        isBinding = !isBinding;
-        waitRelease = isBinding;
-    }
-
-    char popupId[64];
-    sprintf_s(popupId, "Context##%s", label);
-    if (ImGui::BeginPopupContextItem(popupId)) {
-        ImGui::TextDisabled("Quick Wheel Binds:");
-        if (ImGui::Selectable("MWheelDown (Scroll Down)")) {
-            key = VK_MWHEELDOWN;
-            isBinding = false;
-        }
-        if (ImGui::Selectable("MWheelUp (Scroll Up)")) {
-            key = VK_MWHEELUP;
-            isBinding = false;
-        }
-        if (ImGui::Selectable("M3 (Wheel Click)")) {
-            key = VK_MBUTTON;
-            isBinding = false;
-        }
-        ImGui::Separator();
-        if (ImGui::Selectable("Clear / None")) {
-            key = 0;
-            isBinding = false;
-        }
-        ImGui::EndPopup();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Left-click: press any key or scroll / click mouse wheel\nRight-click: quick wheel bind menu\nESC: cancel");
+    if(cfg.cosmeticParser.hasStatus) Status(cfg.cosmeticParser.statusMessage);
+}
+void Unlocks() {
+    auto state=Game::Runtime::Get().ReadState();
+    if(state.hasCosmeticStats && GetTickCount64()-state.timestamp<1000) {
+        char status[80];sprintf_s(status,"Unlocked: %d / %d",state.unlocked,state.total);ui::Label(status);
+    } else Status("Enter main menu or lobby to load cosmetics.");
+    static std::string status;
+    bool success=false;
+    if(Game::Runtime::Get().TakeResult(Game::Action::UnlockCosmetics,success)) status=success?"Cosmetics unlocked and saved.":"Unlock failed. Wait for the session.";
+    if(ui::Button("Unlock all cosmetics")) status=Game::Runtime::Get().Queue(Game::Action::UnlockCosmetics)?"Applying on game update...":"Game update unavailable.";
+    if(!status.empty()) Status(status);
+}
+}
+Menu& Menu::Get() {static Menu instance;return instance;}
+void Menu::Initialize(ID3D11Device* device,HWND window) {
+    Render::Draw->Init(device,window);
+    if(!Globals::Gui_Ctx) {
+        ui::CreateContext();
+        Globals::Gui_Ctx->ItemSpacing=Vec2(0,6);
+        Globals::Gui_Ctx->MenuAlpha=1;
     }
 }
-
-Menu& Menu::Get() {
-    static Menu instance;
-    return instance;
+void Menu::Shutdown() {
+    if(Globals::Gui_Ctx) ui::DeleteContext(Globals::Gui_Ctx);
+    DrawList::Drawlist.clear();
+    Render::Draw->ReleaseObjects();
+    alpha=0;currentTab=0;
 }
-
 void Menu::Render() {
-    auto& cfg = Core::Config::Get();
-    if (!cfg.menu.isVisible) return;
-
-    ImGui::SetNextWindowSize(ImVec2(480, 680), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("R.E.P.O Internal [DEL / INS]", &cfg.menu.isVisible)) {
-        if (ImGui::CollapsingHeader("God Mode (Invulnerability)", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Enable God Mode", &cfg.godMode.enabled);
-
-            if (cfg.godMode.enabled) {
-                static bool s_BindingGodKey = false;
-                static bool s_WaitReleaseGod = false;
-                DrawKeybindWidget("GodMode", cfg.godMode.toggleKey, s_BindingGodKey, s_WaitReleaseGod, 140.0f);
-
-                ImGui::SameLine();
-                ImGui::RadioButton("Hold##God", &cfg.godMode.keyMode, 0);
-                ImGui::SameLine();
-                ImGui::RadioButton("Toggle##God", &cfg.godMode.keyMode, 1);
-
-                ImGui::SameLine();
-                if (cfg.godMode.active) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[ACTIVE]");
-                } else {
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[IDLE]");
-                }
-
-                ImGui::Spacing();
-                ImGui::SeparatorText("Protection Options");
-                ImGui::Checkbox("Invulnerability (Block All Damage)", &cfg.godMode.preventDeath);
-                ImGui::Checkbox("Infinite Health (Auto Heal to 100%)", &cfg.godMode.healToMax);
-                ImGui::Checkbox("Immunity to Fall Damage", &cfg.godMode.noFallDamage);
-                ImGui::Checkbox("Auto Revive on Death", &cfg.godMode.autoRevive);
-
-                ImGui::Spacing();
-                ImGui::SeparatorText("Actions");
-                if (ImGui::Button("Instant Full Heal", ImVec2(150, 24))) {
-                    Game::Runtime::Get().Queue(Game::Action::Heal);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Revive Self (If Dead)", ImVec2(160, 24))) {
-                    Game::Runtime::Get().Queue(Game::Action::Revive);
-                }
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Movement", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SeparatorText("NoClip");
-            ImGui::Checkbox("Enable NoClip", &cfg.noclip.enabled);
-
-            if (cfg.noclip.enabled) {
-                static bool s_BindingNoClipKey = false;
-                static bool s_WaitReleaseNoClip = false;
-                DrawKeybindWidget("NoClip", cfg.noclip.toggleKey, s_BindingNoClipKey, s_WaitReleaseNoClip, 140.0f);
-
-                ImGui::SameLine();
-                ImGui::RadioButton("Hold##NC", &cfg.noclip.keyMode, 0);
-                ImGui::SameLine();
-                ImGui::RadioButton("Toggle##NC", &cfg.noclip.keyMode, 1);
-
-                ImGui::SameLine();
-                if (cfg.noclip.active) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[ACTIVE]");
-                } else {
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[IDLE]");
-                }
-
-                ImGui::SliderFloat("Flight Speed", &cfg.noclip.speed, 2.0f, 60.0f, "%.1f m/s");
-                ImGui::SliderFloat("Sprint Multiplier", &cfg.noclip.sprintMultiplier, 1.0f, 5.0f, "%.1fx");
-                ImGui::Checkbox("Through Walls", &cfg.noclip.disableColliders);
-                ImGui::Checkbox("Freeze When Idle", &cfg.noclip.freezeWhenIdle);
-            }
-
-            ImGui::Spacing();
-            ImGui::SeparatorText("Speedhack");
-            ImGui::Checkbox("Enable Speedhack", &cfg.movement.speedEnabled);
-
-            if (cfg.movement.speedEnabled) {
-                ImGui::Checkbox("Always Active (No Keybind / Constant)", &cfg.movement.speedAlwaysOn);
-
-                if (!cfg.movement.speedAlwaysOn) {
-                    static bool s_BindingSpeedKey = false;
-                    static bool s_WaitReleaseSpeed = false;
-                    DrawKeybindWidget("Speed", cfg.movement.speedKey, s_BindingSpeedKey, s_WaitReleaseSpeed, 140.0f);
-
-                    ImGui::SameLine();
-                    ImGui::RadioButton("Hold", &cfg.movement.speedKeyMode, 0);
-                    ImGui::SameLine();
-                    ImGui::RadioButton("Toggle", &cfg.movement.speedKeyMode, 1);
-
-                    ImGui::SameLine();
-                    if (cfg.movement.speedActive) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[ACTIVE]");
-                    } else {
-                        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[IDLE]");
-                    }
-                } else {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[ACTIVE - ALWAYS ON]");
-                }
-
-                ImGui::SliderFloat("Speed Multiplier", &cfg.movement.speedMultiplier, 1.0f, 8.0f, "%.1fx");
-            }
-
-            ImGui::Spacing();
-            ImGui::SeparatorText("Stamina & Strength");
-            ImGui::Checkbox("Infinite Stamina", &cfg.movement.infiniteStamina);
-            ImGui::Checkbox("Infinite Strength", &cfg.movement.infiniteStrength);
-            if (cfg.movement.infiniteStrength) {
-                ImGui::SliderFloat("Strength Level", &cfg.movement.strengthMultiplier, 5.0f, 100.0f, "%.0fx");
-            }
-
-            ImGui::Spacing();
-            ImGui::SeparatorText("Extra Utilities");
-            ImGui::Checkbox("Extend Grab Range", &cfg.movement.extendGrabRange);
-            if (cfg.movement.extendGrabRange) {
-                ImGui::SliderFloat("Grab Range", &cfg.movement.grabRange, 4.0f, 30.0f, "%.0f m");
-            }
-
-            ImGui::Checkbox("Super Jump", &cfg.movement.superJump);
-            if (cfg.movement.superJump) {
-                ImGui::SliderFloat("Jump Multiplier", &cfg.movement.jumpMultiplier, 1.0f, 4.0f, "%.1fx");
-            }
-
-            ImGui::Checkbox("No Ragdoll", &cfg.movement.noTumble);
-        }
-
-        if (ImGui::CollapsingHeader("Visuals", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SeparatorText("Third Person View");
-            ImGui::Checkbox("Enable Third Person View", &cfg.thirdPerson.enabled);
-
-            if (cfg.thirdPerson.enabled) {
-                static bool s_BindingTPKey = false;
-                static bool s_WaitReleaseTP = false;
-                DrawKeybindWidget("ThirdPerson", cfg.thirdPerson.toggleKey, s_BindingTPKey, s_WaitReleaseTP, 140.0f);
-
-                ImGui::SameLine();
-                ImGui::RadioButton("Hold##TP", &cfg.thirdPerson.keyMode, 0);
-                ImGui::SameLine();
-                ImGui::RadioButton("Toggle##TP", &cfg.thirdPerson.keyMode, 1);
-
-                ImGui::SameLine();
-                if (cfg.thirdPerson.active) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[ACTIVE]");
-                } else {
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[IDLE]");
-                }
-
-                ImGui::SliderFloat("Camera Distance", &cfg.thirdPerson.distance, 1.0f, 6.0f, "%.1f m");
-                ImGui::SliderFloat("Shoulder Offset", &cfg.thirdPerson.shoulderOffset, -1.5f, 1.5f, "%.2f m");
-                ImGui::SliderFloat("Height Offset", &cfg.thirdPerson.heightOffset, -0.5f, 1.5f, "%.2f m");
-                ImGui::Checkbox("Anti-Clip Wall Collision", &cfg.thirdPerson.collision);
-
-                ImGui::Spacing();
-                ImGui::SeparatorText("View Presets");
-                if (ImGui::Button("Right Shoulder")) {
-                    cfg.thirdPerson.distance = 2.5f;
-                    cfg.thirdPerson.shoulderOffset = 0.45f;
-                    cfg.thirdPerson.heightOffset = 0.20f;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Left Shoulder")) {
-                    cfg.thirdPerson.distance = 2.5f;
-                    cfg.thirdPerson.shoulderOffset = -0.45f;
-                    cfg.thirdPerson.heightOffset = 0.20f;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Centered")) {
-                    cfg.thirdPerson.distance = 2.8f;
-                    cfg.thirdPerson.shoulderOffset = 0.0f;
-                    cfg.thirdPerson.heightOffset = 0.35f;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Cinematic Wide")) {
-                    cfg.thirdPerson.distance = 4.2f;
-                    cfg.thirdPerson.shoulderOffset = 0.60f;
-                    cfg.thirdPerson.heightOffset = 0.45f;
-                }
-            }
-
-            ImGui::Spacing();
-
-            ImGui::SeparatorText("Screen Crosshair");
-            ImGui::Checkbox("Draw Crosshair", &cfg.visual.drawCrosshair);
-            if (cfg.visual.drawCrosshair) {
-                ImGui::SliderFloat("Crosshair Size", &cfg.visual.crosshairSize, 2.0f, 20.0f, "%.0f px");
-                ImGui::ColorEdit4("Crosshair Color", cfg.visual.crosshairColor, ImGuiColorEditFlags_NoInputs);
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Removals", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Enable Removals", &cfg.removals.enabled);
-            ImGui::BeginDisabled(!cfg.removals.enabled);
-            ImGui::SeparatorText("Environment");
-            ImGui::Checkbox("No Fog", &cfg.removals.noFog);
-            ImGui::SeparatorText("Post-Processing");
-            ImGui::Checkbox("Disable All Post-Processing", &cfg.removals.noPostProcessing);
-            ImGui::BeginDisabled(cfg.removals.noPostProcessing);
-            ImGui::Checkbox("No Film Grain", &cfg.removals.noGrain);
-            ImGui::Checkbox("No Vignette", &cfg.removals.noVignette);
-            ImGui::Checkbox("No Bloom", &cfg.removals.noBloom);
-            ImGui::Checkbox("No Motion Blur", &cfg.removals.noMotionBlur);
-            ImGui::Checkbox("No Lens Distortion", &cfg.removals.noLensDistortion);
-            ImGui::Checkbox("No Chromatic Aberration", &cfg.removals.noChromaticAberration);
-            ImGui::EndDisabled();
-            ImGui::SeparatorText("Camera & Screen Effects");
-            ImGui::Checkbox("No Camera Shake", &cfg.removals.noCameraShake);
-            ImGui::Checkbox("No Camera Sway", &cfg.removals.noCameraNoise);
-            ImGui::Checkbox("No Camera Glitches", &cfg.removals.noCameraGlitch);
-            ImGui::Checkbox("No Damage Overlay", &cfg.removals.noHurtOverlay);
-            ImGui::EndDisabled();
-            ImGui::TextWrapped("Switch off Removals to restore the game's visual effects.");
-            if (cfg.removals.enabled && !Features::Removals::Get().IsPostProcessingReady())
-                ImGui::TextWrapped("Post-processing controls are unavailable in this session.");
-        }
-
-        if (ImGui::CollapsingHeader("Fullbright", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Enable Fullbright", &cfg.fullbright.enabled);
-            ImGui::BeginDisabled(!cfg.fullbright.enabled);
-            ImGui::SliderFloat("Brightness", &cfg.fullbright.brightness, 0.1f, 3.0f, "%.2f");
-            ImGui::EndDisabled();
-            ImGui::TextWrapped("Keeps ambient lighting bright in every room. Works independently of Removals.");
-            if (cfg.fullbright.enabled && !Features::Removals::Get().IsLightingReady())
-                ImGui::TextWrapped("Lighting controls are unavailable in this session.");
-        }
-
-        if (ImGui::CollapsingHeader("ESP", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SeparatorText("General Settings");
-            float maxDist = cfg.monster.maxDistance;
-            if (ImGui::SliderFloat("Max Distance", &maxDist, 10.0f, 500.0f, "%.0f m")) {
-                cfg.monster.maxDistance = maxDist;
-                cfg.player.maxDistance = maxDist;
-                cfg.valuable.maxDistance = maxDist;
-                cfg.item.maxDistance = maxDist;
-            }
-            ImGui::Checkbox("Draw Text Background Box", &cfg.visual.textBackground);
-
-            ImGui::Spacing();
-
-            ImGui::SeparatorText("Monsters ESP");
-            ImGui::Checkbox("Enable Monster ESP", &cfg.monster.enabled);
-            if (cfg.monster.enabled) {
-                if (ImGui::Checkbox("2D Box##M", &cfg.monster.box2D)) {
-                    if (cfg.monster.box2D) cfg.monster.cornerBox = false;
-                }
-                ImGui::SameLine();
-                if (ImGui::Checkbox("Corner Box##M", &cfg.monster.cornerBox)) {
-                    if (cfg.monster.cornerBox) cfg.monster.box2D = false;
-                }
-                ImGui::SameLine();
-                ImGui::Checkbox("Snaplines##M", &cfg.monster.snaplines);
-
-                ImGui::Checkbox("Name##M", &cfg.monster.showName);
-                ImGui::SameLine();
-                ImGui::Checkbox("Distance##MD", &cfg.monster.showDistance);
-                ImGui::SameLine();
-                ImGui::Checkbox("Highlight Chasing", &cfg.monster.highlightChasing);
-
-                ImGui::ColorEdit4("Monster Color", cfg.monster.colorDefault, ImGuiColorEditFlags_NoInputs);
-            }
-
-            ImGui::Spacing();
-
-            ImGui::SeparatorText("Player ESP (Teammates)");
-            ImGui::Checkbox("Enable Player ESP", &cfg.player.enabled);
-            if (cfg.player.enabled) {
-                if (ImGui::Checkbox("2D Box##P", &cfg.player.box2D)) {
-                    if (cfg.player.box2D) cfg.player.cornerBox = false;
-                }
-                ImGui::SameLine();
-                if (ImGui::Checkbox("Corner Box##P", &cfg.player.cornerBox)) {
-                    if (cfg.player.cornerBox) cfg.player.box2D = false;
-                }
-                ImGui::SameLine();
-                ImGui::Checkbox("Snaplines##P", &cfg.player.snaplines);
-
-                ImGui::Checkbox("Name##P", &cfg.player.showName);
-                ImGui::SameLine();
-                ImGui::Checkbox("Distance##P", &cfg.player.showDistance);
-                ImGui::SameLine();
-                ImGui::Checkbox("Health (HP)##P", &cfg.player.showHealth);
-
-                ImGui::Checkbox("Hide Local Player", &cfg.player.hideLocalPlayer);
-
-                ImGui::ColorEdit4("Player Color", cfg.player.color, ImGuiColorEditFlags_NoInputs);
-                ImGui::SameLine();
-                ImGui::ColorEdit4("Dead Color", cfg.player.colorDead, ImGuiColorEditFlags_NoInputs);
-            }
-
-            ImGui::Spacing();
-
-            ImGui::SeparatorText("Items & Loot ESP");
-            bool lootEnabled = cfg.valuable.enabled || cfg.item.enabled;
-            if (ImGui::Checkbox("Enable Items / Valuables ESP", &lootEnabled)) {
-                cfg.valuable.enabled = lootEnabled;
-                cfg.item.enabled = lootEnabled;
-            }
-            if (lootEnabled) {
-                ImGui::Checkbox("Item Name", &cfg.valuable.showName);
-                cfg.item.showName = cfg.valuable.showName;
-                ImGui::SameLine();
-                ImGui::Checkbox("Item Price ($)", &cfg.valuable.showValue);
-                cfg.item.showValue = cfg.valuable.showValue;
-
-                ImGui::Checkbox("Distance##I", &cfg.valuable.showDistance);
-                cfg.item.showDistance = cfg.valuable.showDistance;
-
-                ImGui::SameLine();
-                ImGui::Checkbox("Hide Extracted", &cfg.valuable.hideExtracted);
-
-                ImGui::ColorEdit4("Loot Color ($)", cfg.valuable.color, ImGuiColorEditFlags_NoInputs);
-                ImGui::SameLine();
-                ImGui::ColorEdit4("Item Color", cfg.item.color, ImGuiColorEditFlags_NoInputs);
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Spectator List", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SeparatorText("Window Settings");
-            ImGui::Checkbox("Enable Spectator List Window", &cfg.spectatorList.enabled);
-
-            if (cfg.spectatorList.enabled) {
-                ImGui::Checkbox("Show Watching Target (-> Player / -> YOU)", &cfg.spectatorList.showTarget);
-                ImGui::SameLine();
-                ImGui::Checkbox("Show View Mode ([3rd Person] / [Head])", &cfg.spectatorList.showMode);
-
-                ImGui::Checkbox("Hide When Empty (Auto-Hide)", &cfg.spectatorList.hideWhenEmpty);
-                ImGui::SameLine();
-                ImGui::Checkbox("Show Spectator Count in Title", &cfg.spectatorList.showSpectatorCount);
-
-                ImGui::Spacing();
-                ImGui::SeparatorText("Spectator List Colors");
-                ImGui::ColorEdit4("Header Color", cfg.spectatorList.colorHeader, ImGuiColorEditFlags_NoInputs);
-                ImGui::SameLine();
-                ImGui::ColorEdit4("Spectator Name", cfg.spectatorList.colorSpectator, ImGuiColorEditFlags_NoInputs);
-
-                ImGui::ColorEdit4("Target: YOU (Alert)", cfg.spectatorList.colorTargetMe, ImGuiColorEditFlags_NoInputs);
-                ImGui::SameLine();
-                ImGui::ColorEdit4("Target: Other", cfg.spectatorList.colorTargetOther, ImGuiColorEditFlags_NoInputs);
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Trolling", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SeparatorText("Voice & Audio");
-            ImGui::Checkbox("Global Voice", &cfg.troll.globalVoice);
-            if (cfg.troll.globalVoice) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "[Direct Map Audio]");
-            }
-
-            ImGui::Spacing();
-            ImGui::SeparatorText("Physics (Self)");
-            ImGui::Checkbox("Moon Gravity (Feather Fall)", &cfg.troll.featherFall);
-            ImGui::SameLine();
-            ImGui::Checkbox("Zero Gravity (Weightless Float)", &cfg.troll.zeroGravity);
-
-            ImGui::Spacing();
-            ImGui::SeparatorText("Animation (Visible to Everyone)");
-            ImGui::Checkbox("Override Animation Speed", &cfg.troll.overrideAnimSpeed);
-            if (cfg.troll.overrideAnimSpeed) {
-                ImGui::SliderFloat("Anim Speed", &cfg.troll.animSpeed, 0.1f, 5.0f, "%.1fx");
-                if (ImGui::Button("Matrix (0.2x)")) cfg.troll.animSpeed = 0.2f;
-                ImGui::SameLine();
-                if (ImGui::Button("Normal (1.0x)")) cfg.troll.animSpeed = 1.0f;
-                ImGui::SameLine();
-                if (ImGui::Button("Scooby-Doo (3.0x)")) cfg.troll.animSpeed = 3.0f;
-                ImGui::SameLine();
-                if (ImGui::Button("Sonic (5.0x)")) cfg.troll.animSpeed = 5.0f;
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Cosmetic Parser", ImGuiTreeNodeFlags_DefaultOpen)) {
-            auto& gs = Game::GameState::Get();
-            std::string resultMessage;
-            if (gs.TakeCosmeticResult(cfg.cosmeticParser.actionSuccess, resultMessage)) {
-                cfg.cosmeticParser.hasStatus = true;
-                sprintf_s(cfg.cosmeticParser.statusMessage, "%s", resultMessage.c_str());
-            }
-            auto queueAppearance = [&](uintptr_t target, bool cosmetics, bool colors) {
-                bool queued = gs.QueueCosmeticChange(target, cosmetics, colors);
-                cfg.cosmeticParser.hasStatus = true;
-                cfg.cosmeticParser.actionSuccess = false;
-                sprintf_s(cfg.cosmeticParser.statusMessage, "%s", queued
-                    ? "Applying on next game update..." : "[-] Game update unavailable. Re-enter the session or reload the DLL.");
-            };
-
-            auto state = Game::Runtime::Get().ReadState();
-            if (GetTickCount64() - state.timestamp > 1000) state.players.clear();
-            std::vector<Game::ServerPlayerInfo> serverPlayers = std::move(state.players);
-            for (auto it = serverPlayers.begin(); it != serverPlayers.end();) {
-                if (it->isLocal) it = serverPlayers.erase(it);
-                else ++it;
-            }
-            if (serverPlayers.empty()) {
-                cfg.cosmeticParser.selectedPlayerAddress = 0;
-                cfg.cosmeticParser.selectedPlayerIdx = -1;
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No players detected. Enter a lobby or game to scan players.");
-            } else {
-                std::vector<const char*> playerNames;
-                static char s_Labels[32][128];
-
-                int displayIdx = 0;
-                for (size_t i = 0; i < serverPlayers.size() && displayIdx < 32; ++i) {
-                    const auto& p = serverPlayers[i];
-                    snprintf(s_Labels[displayIdx], sizeof(s_Labels[displayIdx]), "%s%s (HP: %d)##%zu",
-                        p.name.c_str(),
-                        p.isLocal ? " [YOU]" : "",
-                        p.health,
-                        i);
-                    playerNames.push_back(s_Labels[displayIdx]);
-                    displayIdx++;
-                }
-
-                // Keep the same player selected when the server list is reordered.
-                cfg.cosmeticParser.selectedPlayerIdx = -1;
-                for (size_t i = 0; i < playerNames.size(); ++i) {
-                    if (serverPlayers[i].address == cfg.cosmeticParser.selectedPlayerAddress)
-                        cfg.cosmeticParser.selectedPlayerIdx = static_cast<int>(i);
-                }
-                if (cfg.cosmeticParser.selectedPlayerIdx < 0) cfg.cosmeticParser.selectedPlayerAddress = 0;
-
-                ImGui::SetNextItemWidth(300.0f);
-                bool targetChanged = ImGui::Combo("Select Target Player", &cfg.cosmeticParser.selectedPlayerIdx,
-                    playerNames.data(), static_cast<int>(playerNames.size()));
-
-                uintptr_t targetAddr = 0;
-                if (cfg.cosmeticParser.selectedPlayerIdx >= 0 && cfg.cosmeticParser.selectedPlayerIdx < static_cast<int>(serverPlayers.size())) {
-                    targetAddr = serverPlayers[cfg.cosmeticParser.selectedPlayerIdx].address;
-                }
-                if (targetChanged && targetAddr) {
-                    cfg.cosmeticParser.selectedPlayerAddress = targetAddr;
-                }
-
-                ImGui::Spacing();
-                ImGui::BeginDisabled(targetAddr == 0);
-                if (ImGui::Button("Copy Cosmetics + Colors", ImVec2(-1, 32.0f))) {
-                    if (targetAddr) {
-                        queueAppearance(targetAddr, true, true);
-                    }
-                }
-
-                if (ImGui::Button("Copy Cosmetics Only", ImVec2(150, 24.0f))) {
-                    if (targetAddr) {
-                        queueAppearance(targetAddr, true, false);
-                    }
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Copy Colors Only", ImVec2(130, 24.0f))) {
-                    if (targetAddr) {
-                        queueAppearance(targetAddr, false, true);
-                    }
-                }
-                ImGui::EndDisabled();
-            }
-
-            if (cfg.cosmeticParser.hasStatus) {
-                ImGui::Spacing();
-                if (cfg.cosmeticParser.actionSuccess) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "%s", cfg.cosmeticParser.statusMessage);
-                } else {
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", cfg.cosmeticParser.statusMessage);
-                }
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Unlocks", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SeparatorText("Cosmetics Unlocker");
-            static int s_UnlockedCount = 0;
-            static int s_TotalCount = 0;
-            static bool s_UnlockAttempted = false;
-            static bool s_UnlockSuccess = false;
-            static char s_StatusMessage[128] = "";
-
-            auto state = Game::Runtime::Get().ReadState();
-            int currentUnlocked = state.unlocked, currentTotal = state.total;
-            bool hasStats = state.hasCosmeticStats && GetTickCount64() - state.timestamp < 1000;
-            if (hasStats) {
-                s_UnlockedCount = currentUnlocked;
-                s_TotalCount = currentTotal;
-            }
-
-            if (s_TotalCount > 0) {
-                float frac = (s_TotalCount > 0) ? ((float)s_UnlockedCount / (float)s_TotalCount) : 0.0f;
-                if (frac > 1.0f) frac = 1.0f;
-                char buf[64];
-                sprintf_s(buf, "%d / %d (%.0f%%)", s_UnlockedCount, s_TotalCount, frac * 100.0f);
-                ImGui::Text("Unlocked Cosmetics:");
-                ImGui::ProgressBar(frac, ImVec2(-1.0f, 0.0f), buf);
-            } else {
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Status: [ Enter main menu or lobby to load ]");
-            }
-
-            ImGui::Spacing();
-            bool unlockResult = false;
-            if (Game::Runtime::Get().TakeResult(Game::Action::UnlockCosmetics, unlockResult)) {
-                s_UnlockSuccess = unlockResult;
-                sprintf_s(s_StatusMessage, "%s", unlockResult ? "[+] Cosmetics unlocked and saved." : "[-] Unlock failed; wait until the session is ready.");
-            }
-            if (ImGui::Button("Unlock All Cosmetics Permanently", ImVec2(-1.0f, 32.0f))) {
-                s_UnlockAttempted = true;
-                s_UnlockSuccess = false;
-                bool queued = Game::Runtime::Get().Queue(Game::Action::UnlockCosmetics);
-                sprintf_s(s_StatusMessage, "%s", queued ? "Applying on game update..." : "[-] Game update unavailable.");
-            }
-
-            if (s_UnlockAttempted) {
-                if (s_UnlockSuccess) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "%s", s_StatusMessage);
-                } else {
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", s_StatusMessage);
-                }
-            } else {
-                ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Permanently unlocks all hats, skins, and outfits to your save file.");
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Settings")) {
-            ImGui::SeparatorText("Keybinds");
-            ImGui::Text("Menu Toggle Key:");
-            ImGui::SameLine();
-
-            static bool s_BindingMenuKey = false;
-            static bool s_WaitReleaseMenu = false;
-            int menuKey = static_cast<int>(cfg.menu.toggleKey);
-            DrawKeybindWidget("MenuToggle", menuKey, s_BindingMenuKey, s_WaitReleaseMenu, 140.0f);
-            cfg.menu.toggleKey = static_cast<DWORD>(menuKey);
-
-            ImGui::SameLine();
-            if (ImGui::Button("DEL##ResetMenuKey", ImVec2(40, 24))) {
-                cfg.menu.toggleKey = VK_DELETE;
-                s_BindingMenuKey = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("INS##ResetMenuKey", ImVec2(40, 24))) {
-                cfg.menu.toggleKey = VK_INSERT;
-                s_BindingMenuKey = false;
-            }
-
-            ImGui::TextDisabled("Note: DELETE and INSERT will always toggle the menu as safe fallbacks.");
-
-            ImGui::Spacing();
-            ImGui::SeparatorText("Unload");
-            if (ImGui::Button("Safe Unload / Eject Cheat", ImVec2(-1, 24))) {
-                cfg.menu.requestUnload = true;
-            }
-        }
-
-        ImGui::Separator();
-        ImGuiIO& io = ImGui::GetIO();
-        ImGui::TextDisabled("%.1f FPS (%.2f ms)", io.Framerate, 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f));
-
-        ImGui::End();
+    if(!Globals::Gui_Ctx) return;
+    auto& cfg=Core::Config::Get();
+    float fc=ImGui::GetIO().DeltaTime*255*10;
+    if(!cfg.menu.isVisible&&alpha>0) alpha=std::clamp(alpha-fc/255.f,0.f,1.f);
+    if(cfg.menu.isVisible&&alpha<1) alpha=std::clamp(alpha+fc/255.f,0.f,1.f);
+    Globals::Gui_Ctx->MenuAlpha=static_cast<int>(floor(alpha*255));
+    if(!cfg.menu.isVisible&&alpha==0) return;
+    Render::Draw->Reset();
+    ui::GetInputFromWindow(Render::Draw->GetWindow());
+    ImGui::SetNextFrameWantCaptureMouse(cfg.menu.isVisible);
+    ImGui::SetNextFrameWantCaptureKeyboard(cfg.menu.isVisible);
+    ui::SetNextWindowSize({660,560});
+    ui::Begin("Main",GuiFlags_None);
+    ui::TabButton("A",&currentTab,0,7);
+    ui::TabButton("G",&currentTab,1,7);
+    ui::TabButton("C",&currentTab,2,7);
+    ui::TabButton("D",&currentTab,3,7);
+    ui::TabButton("E",&currentTab,4,7);
+    ui::TabButton("F",&currentTab,5,7);
+    ui::TabButton("H",&currentTab,6,7);
+    ui::TabButton("I",&currentTab,7,7);
+    switch(currentTab) {
+    case 0:
+        ui::BeginChild("God mode",{Vec2(0,0),Vec2(3,10)});
+        ui::Checkbox("Enabled",&cfg.godMode.enabled);KeyBind("##God",cfg.godMode.toggleKey,cfg.godMode.keyMode);
+        ui::Checkbox("Invulnerability",&cfg.godMode.preventDeath);
+        ui::Checkbox("Auto heal",&cfg.godMode.healToMax);
+        ui::Checkbox("No fall damage",&cfg.godMode.noFallDamage);
+        ui::Checkbox("Auto revive",&cfg.godMode.autoRevive);
+        if(ui::Button("Instant full heal")) Game::Runtime::Get().Queue(Game::Action::Heal);
+        if(ui::Button("Revive self")) Game::Runtime::Get().Queue(Game::Action::Revive);
+        ui::EndChild();
+        ui::BeginChild("Movement",{Vec2(6,0),Vec2(3,10)});
+        ui::Checkbox("NoClip",&cfg.noclip.enabled);KeyBind("##NoClip",cfg.noclip.toggleKey,cfg.noclip.keyMode);
+        ui::SliderFloat("Flight speed",&cfg.noclip.speed,2,60,"%.1f m/s",.5f);
+        ui::SliderFloat("Sprint multiplier",&cfg.noclip.sprintMultiplier,1,5,"%.1fx",.1f);
+        ui::Checkbox("Through walls",&cfg.noclip.disableColliders);
+        ui::Checkbox("Freeze when idle",&cfg.noclip.freezeWhenIdle);
+        ui::Checkbox("Speedhack",&cfg.movement.speedEnabled);KeyBind("##Speed",cfg.movement.speedKey,cfg.movement.speedKeyMode);
+        ui::Checkbox("Always active",&cfg.movement.speedAlwaysOn);
+        ui::SliderFloat("Speed multiplier",&cfg.movement.speedMultiplier,1,8,"%.1fx",.1f);
+        ui::EndChild();break;
+    case 1:
+        ui::BeginChild("Stamina & strength",{Vec2(0,0),Vec2(3,10)});
+        ui::Checkbox("Infinite stamina",&cfg.movement.infiniteStamina);
+        ui::Checkbox("Infinite strength",&cfg.movement.infiniteStrength);
+        ui::SliderFloat("Strength level",&cfg.movement.strengthMultiplier,5,100,"%.0fx",1);
+        ui::EndChild();
+        ui::BeginChild("Movement utilities",{Vec2(6,0),Vec2(3,5)});
+        ui::Checkbox("Extend grab range",&cfg.movement.extendGrabRange);
+        ui::SliderFloat("Grab range",&cfg.movement.grabRange,4,30,"%.0f m",1);
+        ui::Checkbox("Super jump",&cfg.movement.superJump);
+        ui::SliderFloat("Jump multiplier",&cfg.movement.jumpMultiplier,1,4,"%.1fx",.1f);
+        ui::Checkbox("No ragdoll",&cfg.movement.noTumble);
+        ui::EndChild();
+        ui::BeginChild("Physics",{Vec2(6,7),Vec2(3,3)});
+        ui::Checkbox("Moon gravity",&cfg.troll.featherFall);
+        ui::Checkbox("Zero gravity",&cfg.troll.zeroGravity);
+        ui::EndChild();break;
+    case 2:
+        ui::BeginChild("Player ESP",{Vec2(0,0),Vec2(3,6)});
+        ui::Checkbox("Enabled",&cfg.player.enabled);Color("##PlayerColor",cfg.player.color);
+        EspOptions(cfg.player.box2D,cfg.player.cornerBox,cfg.player.snaplines,cfg.player.showName,cfg.player.showDistance);
+        ui::Checkbox("Health",&cfg.player.showHealth);
+        ui::Checkbox("Hide local player",&cfg.player.hideLocalPlayer);
+        ui::Label("Dead player");Color("##DeadColor",cfg.player.colorDead);
+        ui::EndChild();
+        ui::BeginChild("General ESP",{Vec2(0,8),Vec2(3,2)});
+        {float previous=cfg.monster.maxDistance;float distance=previous;ui::SliderFloat("Maximum distance",&distance,10,500,"%.0f m",1);
+        if(distance!=previous) cfg.monster.maxDistance=cfg.player.maxDistance=cfg.valuable.maxDistance=cfg.item.maxDistance=distance;}
+        ui::Checkbox("Text background",&cfg.visual.textBackground);
+        ui::EndChild();
+        ui::BeginChild("Monster ESP",{Vec2(6,0),Vec2(3,3)});
+        ui::Checkbox("Enabled",&cfg.monster.enabled);Color("##MonsterColor",cfg.monster.colorDefault);
+        EspOptions(cfg.monster.box2D,cfg.monster.cornerBox,cfg.monster.snaplines,cfg.monster.showName,cfg.monster.showDistance);
+        ui::Checkbox("Highlight chasing",&cfg.monster.highlightChasing);
+        ui::EndChild();
+        ui::BeginChild("Items & loot",{Vec2(6,5),Vec2(3,5)});
+        {bool enabled=cfg.valuable.enabled||cfg.item.enabled;ui::Checkbox("Enabled",&enabled);cfg.valuable.enabled=cfg.item.enabled=enabled;}
+        ui::Checkbox("Name",&cfg.valuable.showName);cfg.item.showName=cfg.valuable.showName;
+        ui::Checkbox("Price",&cfg.valuable.showValue);cfg.item.showValue=cfg.valuable.showValue;
+        ui::Checkbox("Distance",&cfg.valuable.showDistance);cfg.item.showDistance=cfg.valuable.showDistance;
+        ui::Checkbox("Hide extracted",&cfg.valuable.hideExtracted);
+        ui::Label("Valuable color");Color("##LootColor",cfg.valuable.color);
+        ui::Label("Item color");Color("##ItemColor",cfg.item.color);
+        ui::EndChild();break;
+    case 3:
+        ui::BeginChild("Removals",{Vec2(0,0),Vec2(3,10)});
+        ui::Checkbox("Enabled",&cfg.removals.enabled);
+        RemovalGroup("Environment",{{"Fog",&cfg.removals.noFog}});
+        RemovalGroup("Post-processing",{
+            {"All post-processing",&cfg.removals.noPostProcessing},
+            {"Film grain",&cfg.removals.noGrain},
+            {"Vignette",&cfg.removals.noVignette},
+            {"Bloom",&cfg.removals.noBloom},
+            {"Motion blur",&cfg.removals.noMotionBlur},
+            {"Lens distortion",&cfg.removals.noLensDistortion},
+            {"Chromatic aberration",&cfg.removals.noChromaticAberration}});
+        RemovalGroup("Camera & screen",{
+            {"Shake / bob",&cfg.removals.noCameraShake},
+            {"Sway",&cfg.removals.noCameraNoise},
+            {"Glitches",&cfg.removals.noCameraGlitch},
+            {"Damage overlay",&cfg.removals.noHurtOverlay}});
+        ui::EndChild();
+        ui::BeginChild("Fullbright",{Vec2(6,0),Vec2(3,4)});
+        ui::Checkbox("Enabled",&cfg.fullbright.enabled);
+        ui::SliderFloat("Brightness",&cfg.fullbright.brightness,.1f,3,"%.2f",.05f);
+        ui::EndChild();
+        ui::BeginChild("Crosshair",{Vec2(6,6),Vec2(3,4)});
+        ui::Checkbox("Enabled",&cfg.visual.drawCrosshair);Color("##CrosshairColor",cfg.visual.crosshairColor);
+        ui::SliderFloat("Size",&cfg.visual.crosshairSize,2,20,"%.0f px",1);
+        ui::EndChild();break;
+    case 4:
+        ui::BeginChild("Cosmetic Parser",{Vec2(0,0),Vec2(3,10)});Cosmetics(cfg);ui::EndChild();
+        ui::BeginChild("Cosmetic unlocker",{Vec2(6,0),Vec2(3,10)});Unlocks();ui::EndChild();break;
+    case 5:
+        ui::BeginChild("Camera",{Vec2(0,0),Vec2(3,10)});
+        ui::Checkbox("Third person",&cfg.thirdPerson.enabled);KeyBind("##ThirdPerson",cfg.thirdPerson.toggleKey,cfg.thirdPerson.keyMode);
+        ui::SliderFloat("Camera distance",&cfg.thirdPerson.distance,1,6,"%.1f m",.1f);
+        ui::SliderFloat("Shoulder offset",&cfg.thirdPerson.shoulderOffset,-1.5f,1.5f,"%.2f m",.05f);
+        ui::SliderFloat("Height offset",&cfg.thirdPerson.heightOffset,-.5f,1.5f,"%.2f m",.05f);
+        ui::Checkbox("Wall collision",&cfg.thirdPerson.collision);
+        if(ui::Button("Right shoulder")){cfg.thirdPerson.distance=2.5f;cfg.thirdPerson.shoulderOffset=.45f;cfg.thirdPerson.heightOffset=.2f;}
+        if(ui::Button("Left shoulder")){cfg.thirdPerson.distance=2.5f;cfg.thirdPerson.shoulderOffset=-.45f;cfg.thirdPerson.heightOffset=.2f;}
+        if(ui::Button("Centered")){cfg.thirdPerson.distance=2.8f;cfg.thirdPerson.shoulderOffset=0;cfg.thirdPerson.heightOffset=.35f;}
+        if(ui::Button("Cinematic wide")){cfg.thirdPerson.distance=4.2f;cfg.thirdPerson.shoulderOffset=.6f;cfg.thirdPerson.heightOffset=.45f;}
+        ui::EndChild();
+        ui::BeginChild("Spectator list",{Vec2(6,0),Vec2(3,10)});
+        ui::Checkbox("Enabled",&cfg.spectatorList.enabled);
+        ui::Checkbox("Show watching target",&cfg.spectatorList.showTarget);
+        ui::Checkbox("Show view mode",&cfg.spectatorList.showMode);
+        ui::Checkbox("Hide when empty",&cfg.spectatorList.hideWhenEmpty);
+        ui::Checkbox("Show spectator count",&cfg.spectatorList.showSpectatorCount);
+        ui::Label("Header");Color("##SpectatorHeader",cfg.spectatorList.colorHeader);
+        ui::Label("Spectator name");Color("##SpectatorName",cfg.spectatorList.colorSpectator);
+        ui::Label("Target: you");Color("##TargetMe",cfg.spectatorList.colorTargetMe);
+        ui::Label("Target: other");Color("##TargetOther",cfg.spectatorList.colorTargetOther);
+        ui::EndChild();break;
+    case 6:
+        ui::BeginChild("Settings",{Vec2(0,0),Vec2(3,10)});
+        ui::Label("Menu key");{int key=static_cast<int>(cfg.menu.toggleKey);ui::KeyBind("##MenuKey",&key,nullptr);cfg.menu.toggleKey=key;}
+        ui::Label("Menu color");ui::ColorPicker("##MenuColor",cfg.menu.color);
+        if(ui::Button("Reset menu key")) cfg.menu.toggleKey=VK_DELETE;
+        if(ui::Button("Reset settings")) cfg.ResetToDefaults();
+        if(ui::Button("Unload")) cfg.menu.requestUnload=true;
+        ui::EndChild();
+        ui::BeginChild("Configs",{Vec2(6,0),Vec2(3,10)});
+        Configs();
+        ui::EndChild();break;
+    case 7:
+        ui::BeginChild("Miscellaneous",{Vec2(0,0),Vec2(3,10)});
+        ui::Checkbox("Global voice",&cfg.troll.globalVoice);
+        ui::Checkbox("Override animation speed",&cfg.troll.overrideAnimSpeed);
+        ui::SliderFloat("Animation speed",&cfg.troll.animSpeed,.1f,5,"%.1fx",.1f);
+        if(ui::Button("Matrix (0.2x)"))cfg.troll.animSpeed=.2f;
+        if(ui::Button("Normal (1.0x)"))cfg.troll.animSpeed=1;
+        if(ui::Button("Scooby-Doo (3.0x)"))cfg.troll.animSpeed=3;
+        if(ui::Button("Sonic (5.0x)"))cfg.troll.animSpeed=5;
+        ui::EndChild();
+        ui::BeginChild("Controls",{Vec2(6,0),Vec2(3,10)});
+        Status("DELETE / INSERT open the menu. Right-click a keybind for activation modes.");
+        ui::EndChild();break;
     }
+    ui::SetCurrentWindow(Globals::Gui_Ctx->Windows.front());
+    ui::End();
 }
-
 }

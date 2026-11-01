@@ -1,0 +1,6 @@
+#include <windows.h>
+201 RCDATA "background.png"
+202 RCDATA "tab_icons.ttf"
+
+203 RCDATA "legit_tab_icons.ttf"
+204 RCDATA "keybinds.ttf"

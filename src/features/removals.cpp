@@ -21,6 +21,9 @@ ObjectClass objectClass = nullptr;
 ParentClass parentClass = nullptr;
 UpdateMethod environmentUpdate = nullptr, postUpdate = nullptr, shakeUpdate = nullptr;
 UpdateMethod noiseUpdate = nullptr, glitchUpdate = nullptr, hurtUpdate = nullptr;
+UpdateMethod bobUpdate = nullptr;
+MonoMethod* effectLocalPositionSet = nullptr;
+MonoMethod* effectLocalRotationSet = nullptr;
 std::atomic<bool> stopping{false}, restored{false}, overridesActive{false};
 
 bool Valid(uintptr_t object) {
@@ -174,7 +177,7 @@ void EnvironmentHook(void* object) {
     uintptr_t owner = reinterpret_cast<uintptr_t>(object);
     if (owner == environmentOwner) RestoreEnvironment();
     else {
-        // RenderSettings belongs to the current scene; discard the previous scene's snapshot.
+
         fog.applied = ambientMode.applied = ambientLight.applied = ambientIntensity.applied = false;
         environmentOwner = owner;
     }
@@ -184,7 +187,7 @@ void EnvironmentHook(void* object) {
     if (config.fullbright.enabled) {
         float brightness = config.fullbright.brightness;
         if (!(brightness >= 0.1f && brightness <= 3.0f)) brightness = 1.0f;
-        ambientMode.Apply(3); // UnityEngine.Rendering.AmbientMode.Flat
+        ambientMode.Apply(3);
         ambientIntensity.Apply(1.0f);
         ambientLight.Apply(Unity::Color{brightness, brightness, brightness, 1.0f});
     }
@@ -213,20 +216,41 @@ void PostHook(void* object) {
     TrackOverrides();
 }
 
+void ClearCameraEffect(void* object) {
+    if (!Valid(reinterpret_cast<uintptr_t>(object)) || !effectLocalPositionSet || !effectLocalRotationSet) return;
+    auto* transform=Unity::Engine::Get().GetTransform(reinterpret_cast<MonoObject*>(object));
+    if (!Valid(reinterpret_cast<uintptr_t>(transform))) return;
+    Unity::Vector3 neutralPosition{};
+    std::array<float,4> neutralRotation{0,0,0,1};
+    void* positionArgs[]={&neutralPosition};
+    void* rotationArgs[]={neutralRotation.data()};
+    auto& bridge=Mono::Bridge::Get();
+    bridge.TryInvokeMethod(effectLocalPositionSet,transform,positionArgs);
+    bridge.TryInvokeMethod(effectLocalRotationSet,transform,rotationArgs);
+}
+void BobHook(void* object) {
+    Core::HookActivity activity;
+
+    bobUpdate(object);
+    const auto config=Core::Config::Copy().removals;
+    if (!StopRequested() && config.enabled && config.noCameraShake) ClearCameraEffect(object);
+}
+
 void ShakeHook(void* object) {
     Core::HookActivity activity;
     const auto config = Core::Config::Copy().removals;
     if (!StopRequested() && config.enabled && config.noCameraShake) {
-        // Cancel transient impulses and interpolation endpoints; preserve the tuning parameters.
+
         for (int offset : shakeOffsets) if (offset > 0) Memory::WriteFloat(reinterpret_cast<uintptr_t>(object) + offset, 0.0f);
     }
     shakeUpdate(object);
+    if (!stopping && config.enabled && config.noCameraShake) ClearCameraEffect(object);
 }
 void NoiseHook(void* object) {
     Core::HookActivity activity;
     const auto config = Core::Config::Copy().removals;
     if (StopRequested() || !config.enabled || !config.noCameraNoise) { noiseUpdate(object); return; }
-    // CameraNoise writes into AnimNoise; suppress inputs only for this invocation.
+
     std::array<float, 3> original{};
     std::array<bool, 3> saved{};
     for (size_t i = 0; i < noiseOffsets.size(); ++i) {
@@ -308,6 +332,10 @@ void Removals::Initialize() {
     const char* effectNames[] = {"grain", "bloom", "vignette", "motionBlur", "lensDistortion", "chromaticAberration", "colorGrading"};
     for (size_t i = 0; i < effectOffsets.size(); ++i) effectOffsets[i] = Field(post, effectNames[i]);
     m_PostProcessingReady = objectClass && HookUpdate(post, PostHook, postUpdate);
+    MonoClass* effectTransform=bridge.FindClass(bridge.GetCoreImage(), "UnityEngine", "Transform");
+    effectLocalPositionSet=bridge.FindMethod(effectTransform,"set_localPosition",1);
+    effectLocalRotationSet=bridge.FindMethod(effectTransform,"set_localRotation",1);
+    if (!HookUpdate(find("CameraBob"), BobHook, bobUpdate)) LOG_WARN("Removals: CameraBob hook unavailable");
     MonoClass* shake = find("CameraShake");
     const char* shakeNames[] = {"Strength", "RotXOld", "RotXNew", "RotYOld", "RotYNew", "RotZOld", "RotZNew",
         "PosXOld", "PosXNew", "PosYOld", "PosYNew", "PosZOld", "PosZNew"};

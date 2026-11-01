@@ -1,3 +1,4 @@
+#include "core/keybind.h"
 #include "player.h"
 #include "core/config.h"
 #include "core/logger.h"
@@ -92,14 +93,7 @@ void PlayerMods::Update() {
             shouldBeActive = true;
         } else if (cfg.movement.speedKey > 0) {
             bool isDown = Hook::InputHook::IsKeyHeld(cfg.movement.speedKey);
-            if (cfg.movement.speedKeyMode == 0) {
-                shouldBeActive = isDown;
-            } else {
-                if (isDown && !m_PrevSpeedKeyDown) {
-                    m_SpeedActiveState = !m_SpeedActiveState;
-                }
-                shouldBeActive = m_SpeedActiveState;
-            }
+            shouldBeActive = Core::EvaluateKeybind(cfg.movement.speedKeyMode, isDown, m_PrevSpeedKeyDown, m_SpeedActiveState);
             m_PrevSpeedKeyDown = isDown;
         } else {
             shouldBeActive = true;

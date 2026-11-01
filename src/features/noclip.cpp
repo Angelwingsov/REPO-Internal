@@ -1,3 +1,4 @@
+#include "core/keybind.h"
 #include "noclip.h"
 #include "core/config.h"
 #include "core/logger.h"
@@ -54,14 +55,7 @@ void NoClip::Update(float deltaTime) {
     if (cfg.noclip.enabled) {
         if (cfg.noclip.toggleKey > 0) {
             bool isDown = Hook::InputHook::IsKeyHeld(cfg.noclip.toggleKey);
-            if (cfg.noclip.keyMode == 0) {
-                shouldBeActive = isDown;
-            } else {
-                if (isDown && !m_PrevKeyDown) {
-                    m_ActiveState = !m_ActiveState;
-                }
-                shouldBeActive = m_ActiveState;
-            }
+            shouldBeActive = Core::EvaluateKeybind(cfg.noclip.keyMode, isDown, m_PrevKeyDown, m_ActiveState);
             m_PrevKeyDown = isDown;
         } else {
             shouldBeActive = true;

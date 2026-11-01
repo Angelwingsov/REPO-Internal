@@ -1,3 +1,4 @@
+#include "core/keybind.h"
 #include "core/config.h"
 #include "core/hook_activity.h"
 #include "core/snapshot.h"
@@ -32,11 +33,10 @@ int main() {
     assert(VirtualProtect(pages + pageSize, pageSize, PAGE_NOACCESS, &previous));
     uint64_t value = 123;
     assert(!Memory::Read(reinterpret_cast<uintptr_t>(pages + pageSize - 4), value));
-    assert(value == 0); // A failed partial read must not leak half an old pointer.
+    assert(value == 0);
     assert(!Memory::IsValidRange(UINTPTR_MAX - 2, 8));
     assert(!Memory::IsValidRange(0, 1));
 
-    // A readable Mono header followed by an inaccessible native pointer was previously accepted.
     auto* header = reinterpret_cast<uintptr_t*>(pages + pageSize - sizeof(uintptr_t) * 2);
     header[0] = reinterpret_cast<uintptr_t>(pages);
     header[1] = 0;
@@ -49,8 +49,7 @@ int main() {
     VirtualFree(pages, 0, MEM_RELEASE);
 
     auto& bridge = Mono::Bridge::Get();
-    // No root domain/thread attachment exists in this test process. Runtime calls
-    // must stop here instead of entering Mono with uninitialized thread/JIT TLS.
+
     bridge.m_mono_runtime_invoke = UnexpectedInvoke;
     assert(!bridge.AttachCurrentThread());
     assert(!bridge.TryInvokeMethod(reinterpret_cast<MonoMethod*>(1), nullptr));
@@ -92,10 +91,22 @@ int main() {
         Mono::PinnedObject second(std::move(first));
         assert(!first && second);
         first = Mono::PinnedObject(&string);
-        second = std::move(first); // Releases the replaced handle exactly once.
+        second = std::move(first);
         assert(frees == 1 && !first && second);
     }
     assert(pins == 2 && frees == 2);
+
+    bool toggle = false;
+    assert(!Core::EvaluateKeybind(0, false, false, toggle));
+    assert(Core::EvaluateKeybind(0, true, false, toggle));
+    assert(Core::EvaluateKeybind(1, true, false, toggle));
+    assert(Core::EvaluateKeybind(1, true, true, toggle));
+    assert(Core::EvaluateKeybind(1, false, true, toggle));
+    assert(!Core::EvaluateKeybind(1, true, false, toggle));
+    assert(Core::EvaluateKeybind(2, false, false, toggle));
+    assert(Core::EvaluateKeybind(2, true, false, toggle));
+    assert(Core::EvaluateKeybind(3, false, true, toggle));
+    assert(!Core::EvaluateKeybind(3, true, false, toggle));
 
     auto& global = Core::Config::Global();
     global.fullbright.brightness = 0.7f;

@@ -1,4 +1,5 @@
 #include "unity_engine.h"
+#include "game/player_bounds.h"
 #include "core/logger.h"
 #include "game/state.h"
 
@@ -39,6 +40,17 @@ bool Engine::Initialize() {
         m_methodGetPixelWidth = bridge.FindMethod(m_klassCamera, "get_pixelWidth", 0);
         m_methodGetPixelHeight = bridge.FindMethod(m_klassCamera, "get_pixelHeight", 0);
         LOG_OK("UnityEngine.Camera resolved (W2S: %p)", m_methodWorldToScreen);
+    }
+
+    m_klassMeshRenderer = bridge.FindClass(coreImage, "UnityEngine", "MeshRenderer");
+    m_klassSkinnedMeshRenderer = bridge.FindClass(coreImage, "UnityEngine", "SkinnedMeshRenderer");
+    if (auto* renderer = bridge.FindClass(coreImage, "UnityEngine", "Renderer")) {
+        m_methodRendererGetBounds = bridge.FindMethod(renderer, "get_bounds", 0);
+        m_methodRendererGetEnabled = bridge.FindMethod(renderer, "get_enabled", 0);
+    }
+    if (auto* gameObject = bridge.FindClass(coreImage, "UnityEngine", "GameObject")) {
+
+        m_methodGetComponentsInternal = bridge.FindMethod(gameObject, "GetComponentsInternal", 6);
     }
 
     m_klassComponent = bridge.FindClass(coreImage, "UnityEngine", "Component");
@@ -113,8 +125,7 @@ bool Engine::Initialize() {
     if (physImage) {
         m_klassPhysics = bridge.FindClass(physImage, "UnityEngine", "Physics");
         if (m_klassPhysics) {
-        // The three-argument overload can be (start, end, layerMask), not out RaycastHit.
-        // The five-argument signature uniquely includes the output hit buffer.
+
         m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 5);
             if (!m_methodLinecast) {
                 m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 2);
@@ -140,6 +151,7 @@ bool Engine::Initialize() {
         if (m_klassCollider) {
             m_methodColliderSetEnabled = bridge.FindMethod(m_klassCollider, "set_enabled", 1);
             m_methodColliderGetEnabled = bridge.FindMethod(m_klassCollider, "get_enabled", 0);
+            m_methodColliderGetBounds = bridge.FindMethod(m_klassCollider, "get_bounds", 0);
             m_methodColliderSetIsTrigger = bridge.FindMethod(m_klassCollider, "set_isTrigger", 1);
             m_methodColliderGetIsTrigger = bridge.FindMethod(m_klassCollider, "get_isTrigger", 0);
             LOG_OK("UnityEngine.Collider resolved (set_enabled: %p, set_isTrigger: %p)",
@@ -286,6 +298,58 @@ void Engine::SetColliderEnabled(MonoObject* colObj, bool enabled) {
     Mono::Bridge::Get().InvokeMethod(m_methodColliderSetEnabled, colObj, args, &exc);
 }
 
+bool Engine::TryGetVisualBounds(MonoObject* meshParent, Bounds& bounds, bool& hasSkinned) {
+    hasSkinned=false;
+    if (!IsValidUnityObject(meshParent) || !m_klassMeshRenderer || !m_methodGetComponentsInternal ||
+        !m_methodRendererGetBounds || !m_methodRendererGetEnabled) return false;
+    auto& bridge = Mono::Bridge::Get();
+    Game::PlayerBoundsAccumulator accumulator;
+    for (auto* rendererClass : {m_klassMeshRenderer,m_klassSkinnedMeshRenderer}) {
+        if (!rendererClass) continue;
+        MonoObject* type = bridge.GetReflectionType(rendererClass);
+        Mono::PinnedObject typePin(type);
+        if (!typePin) return false;
+        int typedArray=1, recursive=1, inactive=0, reverse=0;
+        void* args[] = {type, &typedArray, &recursive, &inactive, &reverse, nullptr};
+        MonoObject* exception = nullptr;
+        MonoObject* result = bridge.InvokeMethod(m_methodGetComponentsInternal, meshParent, args, &exception);
+        if (!result || exception) return false;
+        Mono::PinnedObject arrayPin(result);
+        if (!arrayPin) return false;
+        uintptr_t length=0;
+        uintptr_t array=reinterpret_cast<uintptr_t>(result);
+        if (!Memory::ReadPtr(array+sizeof(void*)*3,length) || length>128) return false;
+        for (uintptr_t i=0;i<length;++i) {
+            uintptr_t reference=0;
+            if (!Memory::ReadPtr(array+sizeof(void*)*4+i*sizeof(void*),reference)) return false;
+            auto* renderer=reinterpret_cast<MonoObject*>(reference);
+            if (!IsValidUnityObject(renderer)) continue;
+            exception=nullptr;
+            auto* enabledValue=bridge.InvokeMethod(m_methodRendererGetEnabled,renderer,nullptr,&exception);
+            bool enabled=false;
+            if (!enabledValue || exception || !bridge.Unbox(enabledValue,enabled) || !enabled) continue;
+            exception=nullptr;
+            auto* value=bridge.InvokeMethod(m_methodRendererGetBounds,renderer,nullptr,&exception);
+            Bounds part;
+            if (value && !exception && bridge.Unbox(value,part) && part.IsValid()) {
+                accumulator.Add(part);
+                if (rendererClass==m_klassSkinnedMeshRenderer) hasSkinned=true;
+            }
+        }
+    }
+    return accumulator.Get(bounds);
+}
+
+bool Engine::TryGetColliderBounds(MonoObject* collider, Bounds& bounds) {
+    if (!m_methodColliderGetBounds || !IsValidUnityObject(collider)) return false;
+    MonoObject* exception = nullptr;
+    MonoObject* result = Mono::Bridge::Get().InvokeMethod(m_methodColliderGetBounds, collider, nullptr, &exception);
+    Bounds value;
+    if (!result || exception || !Mono::Bridge::Get().Unbox(result, value) || !value.IsValid()) return false;
+    bounds = value;
+    return true;
+}
+
 bool Engine::GetColliderEnabled(MonoObject* colObj) {
     if (!colObj || !m_methodColliderGetEnabled || !IsValidUnityObject(colObj)) {
         return false;
@@ -404,7 +468,7 @@ bool Engine::Linecast(const Vector3& start, const Vector3& end, Vector3& outHitP
     InternalRaycastHit hit{};
 
     int layerMask = -1;
-    int triggerInteraction = 1; // QueryTriggerInteraction.Ignore
+    int triggerInteraction = 1;
     void* params[5];
     params[0] = &s;
     params[1] = &e;

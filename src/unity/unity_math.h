@@ -67,6 +67,16 @@ struct Vector3 {
     }
 };
 
+struct Bounds {
+    Vector3 center;
+    Vector3 extents;
+    bool IsValid() const {
+        return center.IsValid() && extents.IsValid(5) &&
+            extents.x > .001f && extents.y > .001f && extents.z > .001f;
+    }
+};
+static_assert(sizeof(Bounds) == 24, "Unity Bounds consists of center and extents Vector3 values");
+
 struct Color {
     float r = 1.0f;
     float g = 1.0f;

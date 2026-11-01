@@ -1,4 +1,5 @@
 #include "entities.h"
+#include "player_bounds.h"
 #include "state.h"
 #include "unity/unity_engine.h"
 #include "memory/memory.h"
@@ -147,7 +148,36 @@ void EntityManager::CollectPlayers(MonoObject* camera, const Unity::Vector3& ref
             worldPos = engine.GetComponentPosition(reinterpret_cast<MonoObject*>(avatar));
         }
 
-        if (!worldPos.IsValid() || worldPos.IsZero()) continue;
+        if (!worldPos.IsValid()) continue;
+        Unity::Bounds bounds = PlayerFallbackBounds(worldPos);
+        uintptr_t collider = 0;
+        if (gameState.offsets.PlayerAvatar_playerCollider > 0 &&
+            Memory::ReadPtr(avatar + gameState.offsets.PlayerAvatar_playerCollider, collider) && collider) {
+            Unity::Bounds actual;
+            if (engine.TryGetColliderBounds(reinterpret_cast<MonoObject*>(collider), actual)) bounds = actual;
+        }
+
+        uintptr_t visuals=0;
+        if (Memory::ReadPtr(avatar+gameState.offsets.PlayerAvatar_playerAvatarVisuals,visuals) &&
+            Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(visuals))) {
+            uintptr_t meshParent=0;
+            Unity::Bounds visible;
+            bool hasSkinned=false;
+            bool hasVisible=gameState.offsets.PlayerAvatarVisuals_meshParent>0 &&
+                Memory::ReadPtr(visuals+gameState.offsets.PlayerAvatarVisuals_meshParent,meshParent) &&
+                engine.TryGetVisualBounds(reinterpret_cast<MonoObject*>(meshParent),visible,hasSkinned);
+            if (hasVisible) bounds=visible;
+
+            if ((!hasVisible || hasSkinned) && gameState.offsets.PlayerAvatarVisuals_headTop>0) {
+                uintptr_t head=0;
+                if (Memory::ReadPtr(visuals+gameState.offsets.PlayerAvatarVisuals_headTop,head) &&
+                    Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(head))) {
+                    auto position=engine.GetTransformPosition(reinterpret_cast<MonoObject*>(head));
+                    if (FitPlayerBoundsToHead(bounds,position,visible)) bounds=visible;
+                }
+            }
+        }
+        worldPos = bounds.center;
 
         float dist = refPos.Distance(worldPos);
         if (dist > maxDist || dist < 0.1f) continue;
@@ -182,14 +212,23 @@ void EntityManager::CollectPlayers(MonoObject* camera, const Unity::Vector3& ref
             player.maxHealth = 100;
         }
 
-        Unity::Vector3 topWorld = worldPos;
-        topWorld.y += 0.9f;
-        Unity::Vector3 bottomWorld = worldPos;
-        bottomWorld.y -= 0.9f;
-
-        if (engine.WorldToScreen(camera, topWorld, player.topScreenPosition, screenW, screenH) &&
-            engine.WorldToScreen(camera, bottomWorld, player.bottomScreenPosition, screenW, screenH)) {
+        ScreenBounds screenBounds;
+        if (ProjectPlayerBounds(bounds, [&](const Unity::Vector3& point, Unity::Vector3& projected) {
+            return engine.WorldToScreen(camera, point, projected, screenW, screenH);
+        }, screenBounds)) {
+            player.screenBoxMin = screenBounds.min;
+            player.screenBoxMax = screenBounds.max;
+            float centerX = (screenBounds.min.x + screenBounds.max.x) * .5f;
+            player.topScreenPosition = {centerX, screenBounds.min.y, screenPos.z};
+            player.bottomScreenPosition = {centerX, screenBounds.max.y, screenPos.z};
+            player.screenPosition.x = centerX;
             player.hasScreenBox = true;
+        } else {
+
+            Unity::Vector3 head;
+            if (engine.WorldToScreen(camera, bounds.center + Unity::Vector3(0, bounds.extents.y, 0), head, screenW, screenH))
+                player.screenPosition = head;
+            else continue;
         }
 
         out.push_back(player);

@@ -115,15 +115,16 @@ void DX11Hook::RenderOverlay(IDXGISwapChain* pSwapChain) {
             ImGuiIO& io = ImGui::GetIO();
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-            ImGui::StyleColorsDark();
-            ImGuiStyle& style = ImGui::GetStyle();
-            style.WindowRounding = 6.0f;
-            style.FrameRounding = 4.0f;
+            UI::Theme::Apply();
+            UI::Theme::InitializeAssets(s_Device);
+            UI::Menu::Get().Initialize(s_Device, s_Window);
 
             if (!ImGui_ImplWin32_Init(s_Window) || !ImGui_ImplDX11_Init(s_Device, s_Context) || !InputHook::Initialize(s_Window)) {
                 LOG_ERR("Overlay backend initialization failed");
                 if (ImGui::GetIO().BackendRendererUserData) ImGui_ImplDX11_Shutdown();
                 if (ImGui::GetIO().BackendPlatformUserData) ImGui_ImplWin32_Shutdown();
+                UI::Menu::Get().Shutdown();
+                UI::Theme::ShutdownAssets();
                 ImGui::DestroyContext();
                 CleanupRenderTarget();
                 s_Context->Release(); s_Context = nullptr;
@@ -241,7 +242,7 @@ bool DX11Hook::Initialize() {
         MH_Uninitialize();
         return false;
     }
-    // Create both trampolines before either callback can enter game initialization.
+
     if (MH_QueueEnableHook(pPresent) != MH_OK || MH_QueueEnableHook(pResizeBuffers) != MH_OK || MH_ApplyQueued() != MH_OK) {
         LOG_ERR("Failed to enable DX11 hooks; rolling back initialization");
         MH_DisableHook(MH_ALL_HOOKS);
@@ -255,12 +256,14 @@ bool DX11Hook::Initialize() {
 }
 
 void DX11Hook::CleanupOverlay() {
-    // Called by Present on the render thread, serialized with WndProc.
+
     InputHook::Shutdown();
     if (s_ImGuiInitialized) {
         ImGui::GetIO().MouseDrawCursor = false;
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
+        UI::Menu::Get().Shutdown();
+        UI::Theme::ShutdownAssets();
         ImGui::DestroyContext();
         s_ImGuiInitialized = false;
     }

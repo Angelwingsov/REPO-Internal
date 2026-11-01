@@ -14,6 +14,7 @@ public:
     void Update(float screenWidth, float screenHeight);
 
 private:
+    friend struct ESPRenderTestAccess;
     ESP() = default;
     struct Frame {
         std::vector<Game::MonsterEntity> monsters;

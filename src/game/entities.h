@@ -24,6 +24,8 @@ struct MonsterEntity {
 };
 
 struct PlayerEntity {
+    Unity::Vector3 screenBoxMin;
+    Unity::Vector3 screenBoxMax;
     uintptr_t address = 0;
     std::string name;
     Unity::Vector3 worldPosition;

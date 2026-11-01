@@ -1,4 +1,5 @@
 #include "esp.h"
+#include "ui/theme.h"
 #include <algorithm>
 #include "core/config.h"
 #include "core/logger.h"
@@ -45,14 +46,16 @@ void ESP::DrawCornerBox(ImDrawList* drawList, float x, float y, float w, float h
 }
 
 void ESP::Draw2DBox(ImDrawList* drawList, float x, float y, float w, float h, ImU32 col, float thickness) {
-    drawList->AddRect(ImVec2(x - 1, y - 1), ImVec2(x + w + 1, y + h + 1), IM_COL32(0, 0, 0, 220), 0.0f, 0, thickness + 1.0f);
-    drawList->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), col, 0.0f, 0, thickness);
+    drawList->AddRect(ImVec2(x - 1, y - 1), ImVec2(x + w + 1, y + h + 1), IM_COL32(0, 0, 0, 220), 0.0f, thickness + 1.0f, 0);
+    drawList->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), col, 0.0f, thickness, 0);
 }
 
 void ESP::DrawTextPill(ImDrawList* drawList, const ImVec2& centerPos, ImU32 textColor, const char* text, float bgAlpha) {
     if (!text || *text == '\0') return;
 
-    ImVec2 sz = ImGui::CalcTextSize(text);
+    ImFont* font = UI::Theme::TextFont();
+    const float fontSize = font->LegacySize;
+    ImVec2 sz = font->CalcTextSizeA(fontSize, FLT_MAX, 0, text);
     float padX = 4.0f;
     float padY = 2.0f;
 
@@ -63,10 +66,10 @@ void ESP::DrawTextPill(ImDrawList* drawList, const ImVec2& centerPos, ImU32 text
         int alphaByte = static_cast<int>(bgAlpha * 255.0f);
         if (alphaByte > 255) alphaByte = 255;
         drawList->AddRectFilled(minPos, maxPos, IM_COL32(10, 10, 10, alphaByte), 3.0f);
-        drawList->AddRect(minPos, maxPos, IM_COL32(0, 0, 0, 180), 3.0f, 0, 1.0f);
+        drawList->AddRect(minPos, maxPos, IM_COL32(0, 0, 0, 180), 3.0f, 1.0f, 0);
     }
 
-    drawList->AddText(ImVec2(centerPos.x - sz.x * 0.5f, centerPos.y - sz.y * 0.5f), textColor, text);
+    drawList->AddText(font, fontSize, ImVec2(centerPos.x - sz.x * 0.5f, centerPos.y - sz.y * 0.5f), textColor, text);
 }
 
 void ESP::DrawCrosshair(ImDrawList* drawList, float screenW, float screenH) {
@@ -214,14 +217,13 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
                 playerColor = ImGui::ColorConvertFloat4ToU32(*reinterpret_cast<ImVec4*>(config.player.color));
             }
 
-            float textY = player.screenPosition.y - 12.0f;
+            float textY = player.hasScreenBox ? player.topScreenPosition.y - 10.0f : player.screenPosition.y - 12.0f;
 
             if (player.hasScreenBox && (config.player.box2D || config.player.cornerBox)) {
-                float h = std::abs(player.bottomScreenPosition.y - player.topScreenPosition.y);
-                if (h < 8.0f) h = 8.0f;
-                float w = h * 0.55f;
-                float x = player.screenPosition.x - (w * 0.5f);
-                float y = player.topScreenPosition.y;
+                float h = player.screenBoxMax.y - player.screenBoxMin.y;
+                float w = player.screenBoxMax.x - player.screenBoxMin.x;
+                float x = player.screenBoxMin.x;
+                float y = player.screenBoxMin.y;
                 textY = y - 10.0f;
 
                 if (config.player.box2D) {
@@ -237,7 +239,7 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
                 }
             } else if (config.player.snaplines) {
                 drawList->AddLine(ImVec2(screenWidth * 0.5f, screenHeight),
-                                  ImVec2(player.screenPosition.x, player.screenPosition.y),
+                                  ImVec2(player.screenPosition.x, player.hasScreenBox ? player.bottomScreenPosition.y : player.screenPosition.y),
                                   playerColor, config.visual.snaplineThickness);
             }
 

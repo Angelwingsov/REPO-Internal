@@ -45,8 +45,7 @@ void Runtime::Tick() {
     bool stop = m_Stopping.load();
     try {
         {
-            // Game modules see a consistent configuration for this tick. They never
-            // hold the render/input mutex while calling into Unity.
+
             Core::Config::Scope scope(config);
             if (stop) {
                 config.godMode.enabled = config.noclip.enabled = config.movement.speedEnabled = false;

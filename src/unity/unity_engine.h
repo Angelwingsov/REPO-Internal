@@ -58,6 +58,8 @@ public:
     bool GetColliderEnabled(MonoObject* colObj);
     void SetColliderIsTrigger(MonoObject* colObj, bool isTrigger);
     bool GetColliderIsTrigger(MonoObject* colObj);
+    bool TryGetColliderBounds(MonoObject* collider, Bounds& bounds);
+    bool TryGetVisualBounds(MonoObject* meshParent, Bounds& bounds, bool& hasSkinned);
 
     bool Linecast(const Vector3& start, const Vector3& end, Vector3& outHitPoint);
 
@@ -76,6 +78,11 @@ private:
 
     bool m_Initialized = false;
 
+    MonoClass* m_klassMeshRenderer = nullptr;
+    MonoClass* m_klassSkinnedMeshRenderer = nullptr;
+    MonoMethod* m_methodGetComponentsInternal = nullptr;
+    MonoMethod* m_methodRendererGetBounds = nullptr;
+    MonoMethod* m_methodRendererGetEnabled = nullptr;
     MonoClass* m_klassCamera = nullptr;
     MonoClass* m_klassComponent = nullptr;
     MonoClass* m_klassTransform = nullptr;
@@ -114,6 +121,7 @@ private:
     MonoMethod* m_methodColliderGetEnabled = nullptr;
     MonoMethod* m_methodColliderSetIsTrigger = nullptr;
     MonoMethod* m_methodColliderGetIsTrigger = nullptr;
+    MonoMethod* m_methodColliderGetBounds = nullptr;
 
     MonoMethod* m_methodSetAmbientLight = nullptr;
     MonoMethod* m_methodGetAmbientLight = nullptr;

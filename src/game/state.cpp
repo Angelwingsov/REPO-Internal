@@ -158,7 +158,6 @@ bool GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPlayerCosmetics, "colorsEquipped", offsets.PlayerCosmetics_colorsEquipped, 0x0050);
     RESOLVE_FIELD(klassPlayerCosmetics, "photonView", offsets.PlayerCosmetics_photonView, 0x0018);
 
-
     RESOLVE_FIELD(klassSpectateCamera, "player", offsets.SpectateCamera_player, 0x0028);
     RESOLVE_FIELD(klassSpectateCamera, "currentState", offsets.SpectateCamera_currentState, 0x0018);
 
@@ -230,6 +229,8 @@ bool GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassLightManager, "turningOffEmissions", offsets.LightManager_turningOffEmissions, 0x0082);
 
     RESOLVE_FIELD(klassPlayerAvatar, "playerAvatarVisuals", offsets.PlayerAvatar_playerAvatarVisuals, 0x0040);
+    offsets.PlayerAvatarVisuals_meshParent = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "meshParent", -1);
+    offsets.PlayerAvatarVisuals_headTop = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "attachPointTopHeadMiddle", -1);
     RESOLVE_FIELD(klassPlayerAvatar, "PlayerVisionTarget", offsets.PlayerAvatar_PlayerVisionTarget, 0x0068);
     RESOLVE_FIELD(klassPlayerVisionTarget, "VisionTransform", offsets.PlayerVisionTarget_VisionTransform, 0x0020);
     RESOLVE_FIELD(klassCameraPosition, "playerTransform", offsets.CameraPosition_playerTransform, 0x0018);
@@ -345,8 +346,6 @@ bool GameState::Initialize() {
 
     if (!ResolveOffsets()) return false;
 
-    // All gameplay and scene collection runs in GameDirector.Update, including
-    // lobbies without a local PlayerController. Present consumes native snapshots only.
     auto compileMethod = reinterpret_cast<void* (*)(MonoMethod*)>(GetProcAddress(
         GetModuleHandleA("mono-2.0-bdwgc.dll") ? GetModuleHandleA("mono-2.0-bdwgc.dll")
             : GetModuleHandleA("mono.dll"), "mono_compile_method"));
@@ -618,7 +617,7 @@ bool GameState::CopyPlayerCosmetics(uintptr_t targetAvatarAddress) {
         uint8_t synced = 0;
         uint8_t forced = 1;
         void* args[3] = { &synced, &forced, reinterpret_cast<void*>(targetEquippedRaw) };
-        // Apply locally first; the synced branch only queues a Photon RPC.
+
         if (!bridge.TryInvokeMethod(methodPlayerCosmeticsSetupCosmetics, reinterpret_cast<void*>(localCosmetics), args)) {
             LOG_WARN("CopyPlayerCosmetics: SetupCosmetics threw an exception");
             return false;

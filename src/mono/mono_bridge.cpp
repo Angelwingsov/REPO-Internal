@@ -33,8 +33,7 @@ void Bridge::AssemblyCallback(void* item, void* userData) {
         bridge->m_PhysicsImage = img;
         LOG_OK("Found UnityEngine.PhysicsModule Image: %p (%s)", img, rawName);
     }
-    // Utilities shares the prefix but does not contain Photon.Pun.PhotonNetwork.
-    // Assembly enumeration order is not guaranteed, so match the core assembly exactly.
+
     if ((name == "PhotonUnityNetworking" || name == "PhotonUnityNetworking.dll") && !bridge->m_PhotonImage) {
         bridge->m_PhotonImage = img;
         LOG_OK("Found PhotonUnityNetworking Image: %p (%s)", img, rawName);
@@ -65,6 +64,8 @@ bool Bridge::Initialize() {
         m_##fn = reinterpret_cast<fn##_t>(GetProcAddress(m_hMono, #fn)); \
         if (!m_##fn) LOG_WARN("Mono export missing: %s", #fn);
 
+    RESOLVE_EXPORT(mono_class_get_type);
+    RESOLVE_EXPORT(mono_type_get_object);
     RESOLVE_EXPORT(mono_thread_attach);
     RESOLVE_EXPORT(mono_thread_current);
     RESOLVE_EXPORT(mono_get_root_domain);
@@ -121,8 +122,7 @@ bool Bridge::AttachCurrentThread() {
     static thread_local bool s_bAttached = false;
     if (!s_bAttached && m_mono_thread_attach && m_RootDomain) {
         __try {
-            // mono_thread_current is unsafe on unregistered Unity render threads.
-            // mono_thread_attach is idempotent and establishes JIT TLS itself.
+
             if (m_mono_thread_attach(m_RootDomain)) {
                 s_bAttached = true;
                 LOG_OK("Attached thread (TID: %lu) to Mono runtime", GetCurrentThreadId());
@@ -244,8 +244,7 @@ void* Bridge::SafeUnboxRaw(MonoObject* obj) {
 }
 
 std::string Bridge::ReadMonoString(MonoString* mstr) {
-    // Do not call mono_string_to_utf8 on raw pointers obtained from a live scene.
-    // A destroyed object's memory can already have been reclaimed by the collector.
+
     uintptr_t address = reinterpret_cast<uintptr_t>(mstr);
     int32_t length = 0;
     constexpr size_t lengthOffset = sizeof(void*) * 2;
@@ -258,6 +257,16 @@ std::string Bridge::ReadMonoString(MonoString* mstr) {
     std::string result(static_cast<size_t>(required), '\0');
     if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, characters.data(), length, result.data(), required, nullptr, nullptr) != required) return "";
     return result;
+}
+
+MonoObject* Bridge::GetReflectionType(MonoClass* klass) {
+    if (!klass || !m_mono_class_get_type || !m_mono_type_get_object || !AttachCurrentThread()) return nullptr;
+    MonoDomain* domain = m_mono_domain_get ? m_mono_domain_get() : m_RootDomain;
+    if (!domain) domain = m_RootDomain;
+    __try {
+        MonoType* type = m_mono_class_get_type(klass);
+        return type ? m_mono_type_get_object(domain, type) : nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
 }
 
 MonoString* Bridge::CreateString(const char* text) {

@@ -1,3 +1,4 @@
+#include "core/keybind.h"
 #include "godmode.h"
 #include "core/config.h"
 #include "core/logger.h"
@@ -37,14 +38,7 @@ void GodMode::Update() {
     if (cfg.godMode.enabled) {
         if (cfg.godMode.toggleKey > 0) {
             bool isDown = Hook::InputHook::IsKeyHeld(cfg.godMode.toggleKey);
-            if (cfg.godMode.keyMode == 0) {
-                shouldBeActive = isDown;
-            } else {
-                if (isDown && !m_PrevKeyDown) {
-                    m_ActiveState = !m_ActiveState;
-                }
-                shouldBeActive = m_ActiveState;
-            }
+            shouldBeActive = Core::EvaluateKeybind(cfg.godMode.keyMode, isDown, m_PrevKeyDown, m_ActiveState);
             m_PrevKeyDown = isDown;
         } else {
             shouldBeActive = true;

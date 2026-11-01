@@ -44,9 +44,12 @@ public:
 
     std::string ReadMonoString(MonoString* mstr);
     MonoString* CreateString(const char* text);
+    MonoObject* GetReflectionType(MonoClass* klass);
     uint32_t PinObject(MonoObject* object);
     void FreePin(uint32_t handle);
 
+    mono_class_get_type_t m_mono_class_get_type = nullptr;
+    mono_type_get_object_t m_mono_type_get_object = nullptr;
     mono_thread_attach_t m_mono_thread_attach = nullptr;
     mono_thread_current_t m_mono_thread_current = nullptr;
     mono_get_root_domain_t m_mono_get_root_domain = nullptr;

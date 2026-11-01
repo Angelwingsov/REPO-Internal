@@ -12,7 +12,6 @@ namespace {
     volatile LONG handlingCrash = 0;
 }
 
-
 void Logger::Initialize(const char* consoleTitle) {
     std::lock_guard<std::mutex> lock(s_LogMutex);
     if (s_Initialized) return;
@@ -39,7 +38,6 @@ void Logger::Initialize(const char* consoleTitle) {
         }
     }
 
-    // Allow diagnostics to be read while the game is running.
     s_LogFile = _fsopen("repo_cheat.log", "w", _SH_DENYNO);
     crashLibrary = LoadLibraryA("dbghelp.dll");
     if (crashLibrary) writeCrashDump = reinterpret_cast<decltype(writeCrashDump)>(GetProcAddress(crashLibrary, "MiniDumpWriteDump"));
@@ -57,7 +55,6 @@ void Logger::Shutdown() {
     std::lock_guard<std::mutex> lock(s_LogMutex);
     if (!s_Initialized) return;
 
-    // A null previous filter still has to be restored before this DLL is unloaded.
     SetUnhandledExceptionFilter(s_PrevExceptionFilter);
     s_PrevExceptionFilter = nullptr;
     writeCrashDump = nullptr;
@@ -150,8 +147,7 @@ void Logger::LogInternal(LogLevel level, const char* format, va_list args) {
 LONG WINAPI Logger::UnhandledExceptionFilter(EXCEPTION_POINTERS* exception) {
     if (!exception || !exception->ExceptionRecord || InterlockedCompareExchange(&handlingCrash, 1, 0))
         return EXCEPTION_CONTINUE_SEARCH;
-    // Never acquire the logger mutex or use its FILE streams on the faulting thread:
-    // the exception may have interrupted a log write while that mutex was held.
+
     HMODULE module = nullptr;
     char modulePath[MAX_PATH] = "Unknown / JIT memory";
     auto* record = exception->ExceptionRecord;
