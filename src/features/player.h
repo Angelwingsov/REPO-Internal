@@ -8,6 +8,7 @@ class PlayerMods {
 public:
     static PlayerMods& Get();
 
+    void Initialize();
     void Update();
 
     static const char* GetKeyName(int vkCode);

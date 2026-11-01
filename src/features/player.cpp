@@ -7,8 +7,63 @@
 #include "unity/unity_engine.h"
 #include "mono/mono_bridge.h"
 #include "hook/input.h"
+#include "core/hook_activity.h"
+#include "game/runtime.h"
+#include "minhook/include/MinHook.h"
+#include <cmath>
 
 namespace Features {
+namespace {
+using VisualsUpdate = void (*)(void*);
+VisualsUpdate originalDeltaTimeUpdate = nullptr;
+int visualsAvatarOffset = -1, visualsDeltaTimeOffset = -1, visualsSpeedOffset = -1;
+int visualsExpressionOffset = -1, avatarLocalOffset = -1;
+
+void VisualsDeltaTimeHook(void* object) {
+    Core::HookActivity activity;
+    originalDeltaTimeUpdate(object);
+    if (Game::Runtime::Get().IsStopping() || !Core::Config::Copy().troll.overrideAnimSpeed ||
+        !Unity::Engine::IsValidUnityObject(object)) return;
+    uintptr_t visuals = reinterpret_cast<uintptr_t>(object), avatar = 0;
+    uint8_t local = 0, expression = 0;
+    float deltaTime = 0, speed = 0;
+    if (!Memory::ReadPtr(visuals + visualsAvatarOffset, avatar) ||
+        !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatar)) ||
+        !Memory::ReadByte(avatar + avatarLocalOffset, local) || !local ||
+        !Memory::ReadByte(visuals + visualsExpressionOffset, expression) || expression ||
+        !Memory::ReadFloat(visuals + visualsDeltaTimeOffset, deltaTime) ||
+        !Memory::ReadFloat(visuals + visualsSpeedOffset, speed) ||
+        !std::isfinite(deltaTime) || deltaTime < 0 || !std::isfinite(speed) || speed <= 0) return;
+    float followDeltaTime = deltaTime / speed;
+    if (std::isfinite(followDeltaTime)) Memory::WriteFloat(visuals + visualsDeltaTimeOffset, followDeltaTime);
+}
+}
+
+void PlayerMods::Initialize() {
+    auto& bridge = Mono::Bridge::Get();
+    auto* visuals = Game::GameState::Get().klassPlayerAvatarVisuals;
+    visualsAvatarOffset = bridge.GetFieldOffset(visuals, "playerAvatar", -1);
+    visualsDeltaTimeOffset = bridge.GetFieldOffset(visuals, "deltaTime", -1);
+    visualsSpeedOffset = bridge.GetFieldOffset(visuals, "animationSpeedMultiplier", -1);
+    visualsExpressionOffset = bridge.GetFieldOffset(visuals, "expressionAvatar", -1);
+    avatarLocalOffset = bridge.GetFieldOffset(Game::GameState::Get().klassPlayerAvatar, "isLocal", -1);
+    HMODULE mono = GetModuleHandleA("mono-2.0-bdwgc.dll");
+    if (!mono) mono = GetModuleHandleA("mono.dll");
+    auto compile = reinterpret_cast<void* (*)(MonoMethod*)>(mono ? GetProcAddress(mono, "mono_compile_method") : nullptr);
+    auto* method = bridge.FindMethod(visuals, "DeltaTimeUpdate", 0);
+    void* code = compile && method ? compile(method) : nullptr;
+    if (visualsAvatarOffset <= 0 || visualsDeltaTimeOffset <= 0 || visualsSpeedOffset <= 0 ||
+        visualsExpressionOffset <= 0 || avatarLocalOffset <= 0 || !code ||
+        MH_CreateHook(code, &VisualsDeltaTimeHook, reinterpret_cast<void**>(&originalDeltaTimeUpdate)) != MH_OK) {
+        LOG_WARN("Animation override: visual follow hook unavailable");
+        return;
+    }
+    if (MH_EnableHook(code) != MH_OK) {
+        MH_RemoveHook(code);
+        originalDeltaTimeUpdate = nullptr;
+        LOG_WARN("Animation override: visual follow hook could not be enabled");
+    }
+}
 
 PlayerMods& PlayerMods::Get() {
     static PlayerMods instance;

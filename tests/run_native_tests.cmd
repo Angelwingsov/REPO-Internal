@@ -17,3 +17,7 @@ if errorlevel 1 exit /b 1
 cl /nologo /utf-8 /std:c++17 /EHsc /I . /I src tests\removals_camera_test.cpp src\core\config.cpp /Fe:build\removals_camera_test.exe /Fo:build\ /link user32.lib
 if errorlevel 1 exit /b 1
 build\removals_camera_test.exe
+if errorlevel 1 exit /b 1
+cl /nologo /utf-8 /std:c++17 /EHsc /Gy /I . /I src tests\animation_follow_test.cpp src\core\config.cpp /Fe:build\animation_follow_test.exe /Fo:build\ /link /OPT:REF user32.lib
+if errorlevel 1 exit /b 1
+build\animation_follow_test.exe

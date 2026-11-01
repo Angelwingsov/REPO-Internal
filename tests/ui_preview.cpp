@@ -143,6 +143,20 @@ int main() {
             click(panel->Pos.x+panel->Size.x-32,panel->Pos.y+30);
             assert(!picker->Opened);
         }
+        if(tab==1) {
+            auto* animation=find("Animation Override");
+            bool previous=cfg.troll.overrideAnimSpeed;
+            click(animation->Pos.x+25,animation->Pos.y+28);
+            assert(cfg.troll.overrideAnimSpeed!=previous);
+            click(animation->Pos.x+25,animation->Pos.y+28);
+            assert(cfg.troll.overrideAnimSpeed==previous);
+        }
+        if(tab==6) {
+            auto* settings=find("Settings");
+            bool previous=cfg.troll.globalVoice;
+            click(settings->Pos.x+25,settings->Pos.y+28);
+            assert(cfg.troll.globalVoice!=previous);
+        }
         if(tab==3) {
             auto* removals=find("Removals");
             auto* cameraGroup=find("Camera & screen");

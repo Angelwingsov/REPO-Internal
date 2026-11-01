@@ -4,6 +4,7 @@
 #include "unity/unity_engine.h"
 #include "minhook/include/MinHook.h"
 #include "features/removals.h"
+#include "features/player.h"
 #include "runtime.h"
 #include "core/hook_activity.h"
 #include <mutex>
@@ -364,6 +365,7 @@ bool GameState::Initialize() {
     }
 
     Features::Removals::Get().Initialize();
+    Features::PlayerMods::Get().Initialize();
     m_Initialized = (klassEnemyDirector != nullptr || klassValuableDirector != nullptr);
     return m_Initialized;
 }

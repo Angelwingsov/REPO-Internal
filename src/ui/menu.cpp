@@ -237,10 +237,18 @@ void Menu::Render() {
         ui::SliderFloat("Speed multiplier",&cfg.movement.speedMultiplier,1,8,"%.1fx",.1f);
         ui::EndChild();break;
     case 1:
-        ui::BeginChild("Stamina & strength",{Vec2(0,0),Vec2(3,10)});
+        ui::BeginChild("Stamina & strength",{Vec2(0,0),Vec2(3,2)});
         ui::Checkbox("Infinite stamina",&cfg.movement.infiniteStamina);
         ui::Checkbox("Infinite strength",&cfg.movement.infiniteStrength);
         ui::SliderFloat("Strength level",&cfg.movement.strengthMultiplier,5,100,"%.0fx",1);
+        ui::EndChild();
+        ui::BeginChild("Animation Override",{Vec2(0,4),Vec2(3,6)});
+        ui::Checkbox("Override animation speed",&cfg.troll.overrideAnimSpeed);
+        ui::SliderFloat("Animation speed",&cfg.troll.animSpeed,.1f,5,"%.1fx",.1f);
+        if(ui::Button("Matrix (0.2x)"))cfg.troll.animSpeed=.2f;
+        if(ui::Button("Normal (1.0x)"))cfg.troll.animSpeed=1;
+        if(ui::Button("Scooby-Doo (3.0x)"))cfg.troll.animSpeed=3;
+        if(ui::Button("Sonic (5.0x)"))cfg.troll.animSpeed=5;
         ui::EndChild();
         ui::BeginChild("Movement utilities",{Vec2(6,0),Vec2(3,5)});
         ui::Checkbox("Extend grab range",&cfg.movement.extendGrabRange);
@@ -335,6 +343,7 @@ void Menu::Render() {
         ui::EndChild();break;
     case 6:
         ui::BeginChild("Settings",{Vec2(0,0),Vec2(3,10)});
+        ui::Checkbox("Global voice",&cfg.troll.globalVoice);
         ui::Label("Menu key");{int key=static_cast<int>(cfg.menu.toggleKey);ui::KeyBind("##MenuKey",&key,nullptr);cfg.menu.toggleKey=key;}
         ui::Label("Menu color");ui::ColorPicker("##MenuColor",cfg.menu.color);
         if(ui::Button("Reset menu key")) cfg.menu.toggleKey=VK_DELETE;
@@ -345,16 +354,7 @@ void Menu::Render() {
         Configs();
         ui::EndChild();break;
     case 7:
-        ui::BeginChild("Miscellaneous",{Vec2(0,0),Vec2(3,10)});
-        ui::Checkbox("Global voice",&cfg.troll.globalVoice);
-        ui::Checkbox("Override animation speed",&cfg.troll.overrideAnimSpeed);
-        ui::SliderFloat("Animation speed",&cfg.troll.animSpeed,.1f,5,"%.1fx",.1f);
-        if(ui::Button("Matrix (0.2x)"))cfg.troll.animSpeed=.2f;
-        if(ui::Button("Normal (1.0x)"))cfg.troll.animSpeed=1;
-        if(ui::Button("Scooby-Doo (3.0x)"))cfg.troll.animSpeed=3;
-        if(ui::Button("Sonic (5.0x)"))cfg.troll.animSpeed=5;
-        ui::EndChild();
-        ui::BeginChild("Controls",{Vec2(6,0),Vec2(3,10)});
+        ui::BeginChild("Controls",{Vec2(0,0),Vec2(3,10)});
         Status("DELETE / INSERT open the menu. Right-click a keybind for activation modes.");
         ui::EndChild();break;
     }
