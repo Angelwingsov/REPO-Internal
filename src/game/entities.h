@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include "unity/unity_math.h"
 #include "mono/mono_types.h"
 
@@ -65,11 +66,21 @@ public:
 
     void CollectMonsters(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, std::vector<MonsterEntity>& out);
     void CollectPlayers(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, bool hideLocal, std::vector<PlayerEntity>& out);
-    void CollectValuables(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, bool hideExtracted, float minDollar, std::vector<ValuableEntity>& out);
-    void CollectItems(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, std::vector<ItemEntity>& out);
+    void CollectValuables(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, bool hideExtracted, float minDollar, std::vector<ValuableEntity>& out, const Unity::Vector3& camForward = {});
+    void CollectItems(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, std::vector<ItemEntity>& out, const Unity::Vector3& camForward = {});
+
+    void ClearCache();
 
 private:
     EntityManager() = default;
+
+    std::unordered_map<uintptr_t, std::string> m_ValuableNameCache;
+    std::unordered_map<uintptr_t, MonoObject*> m_ValuableTransformCache;
+    std::unordered_map<uintptr_t, std::string> m_ItemNameCache;
+    std::unordered_map<uintptr_t, MonoObject*> m_ItemTransformCache;
+
+    std::vector<uintptr_t> m_ValuableAddressBuffer;
+    std::vector<uintptr_t> m_ItemAddressBuffer;
 };
 
 }

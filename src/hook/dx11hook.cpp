@@ -14,6 +14,7 @@
 #include "features/thirdperson.h"
 #include "features/spectatorlist.h"
 #include "features/removals.h"
+#include "features/antiaim.h"
 #include "ui/theme.h"
 #include "ui/menu.h"
 #include "minhook/include/MinHook.h"
@@ -154,7 +155,7 @@ void DX11Hook::RenderOverlay(IDXGISwapChain* pSwapChain) {
     io.MouseDrawCursor = cfg.menu.isVisible;
 
     Game::Runtime::Get().SetViewport(io.DisplaySize.x, io.DisplaySize.y);
-    if (!s_SubsystemsInitialized && cfg.menu.isVisible) ::ClipCursor(nullptr);
+    if (cfg.menu.isVisible) ::ClipCursor(nullptr);
     if (s_SubsystemsInitialized) {
         Features::ESP::Get().Render(ImGui::GetForegroundDrawList(), io.DisplaySize.x, io.DisplaySize.y);
         Features::SpectatorList::Get().Render();
@@ -282,6 +283,7 @@ void DX11Hook::Shutdown() {
         s_Unloading = false;
         return;
     }
+    Features::AntiAim::Get().RestoreBeforeUnload();
     LOG_INFO("Stopping overlay and waiting for hook callbacks to finish...");
     s_RenderCleanupRequested = true;
     for (int i = 0; i < 400 && !s_RenderCleanupDone; ++i) Sleep(5);

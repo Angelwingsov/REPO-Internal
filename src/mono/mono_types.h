@@ -38,6 +38,8 @@ typedef MonoString* (*mono_string_new_t)(MonoDomain* domain, const char* text);
 typedef void (*mono_free_t)(void* ptr);
 typedef uint32_t (*mono_gchandle_new_t)(MonoObject* object, int pinned);
 typedef void (*mono_gchandle_free_t)(uint32_t handle);
+typedef MonoObject* (*mono_object_new_t)(MonoDomain* domain, MonoClass* klass);
+typedef MonoArray* (*mono_array_new_t)(MonoDomain* domain, MonoClass* eclass, uintptr_t n);
 
 typedef MonoType* (*mono_class_get_type_t)(MonoClass* klass);
 typedef MonoObject* (*mono_type_get_object_t)(MonoDomain* domain, MonoType* type);

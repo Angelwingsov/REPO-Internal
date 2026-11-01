@@ -21,6 +21,10 @@ private:
 
     uintptr_t m_LastPlayerCtrl = 0;
     uintptr_t m_LastPlayerAvatar = 0;
+    uintptr_t m_LastCtrlCol = 0;
+    uintptr_t m_LastAvatarCol = 0;
+    uintptr_t m_LastCtrlRb = 0;
+    uintptr_t m_LastAvatarRb = 0;
 };
 
 }

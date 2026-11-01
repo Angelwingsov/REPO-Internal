@@ -8,6 +8,12 @@
 #include "features/thirdperson.h"
 #include "features/spectatorlist.h"
 #include "features/removals.h"
+
+#include "features/chams.h"
+#include "features/antiaim.h"
+#include "features/animbreaker.h"
+#include "features/spawner.h"
+
 #include "unity/unity_engine.h"
 #include <exception>
 
@@ -52,6 +58,9 @@ void Runtime::Tick() {
                 config.movement.infiniteStamina = config.movement.infiniteStrength = false;
                 config.movement.extendGrabRange = config.movement.grabThroughWalls = config.movement.superJump = config.movement.noTumble = false;
                 config.thirdPerson.enabled = false;
+                config.chams.enabled = false;
+                config.antiAim.enabled = false;
+                config.animBreaker.enabled = false;
                 config.troll = Core::TrollConfig();
                 config.menu.isVisible = false;
             }
@@ -60,6 +69,11 @@ void Runtime::Tick() {
             Features::NoClip::Get().Update(dt);
             Features::PlayerMods::Get().Update();
             Features::ThirdPerson::Get().Update();
+            Features::Chams::Get().Update();
+            Features::AntiAim::Get().Update(dt);
+            Features::AnimBreaker::Get().Update(dt);
+            Features::Spawner::Get().Update(dt);
+
             if (!stop) {
                 std::deque<Action> actions;
                 { std::lock_guard<std::mutex> lock(m_ActionsMutex); actions.swap(m_Actions); }
@@ -77,6 +91,7 @@ void Runtime::Tick() {
                     if (m_Results.size() >= 16) m_Results.pop_front();
                     m_Results.push_back({action, success});
                 }
+
                 Features::SpectatorList::Get().Update();
                 auto viewport = m_Viewport.Read();
                 Features::ESP::Get().Update(viewport.first, viewport.second);
@@ -96,6 +111,7 @@ void Runtime::Tick() {
             global.noclip.active = config.noclip.active;
             global.movement.speedActive = config.movement.speedActive;
             global.thirdPerson.active = config.thirdPerson.active;
+            global.antiAim.active = config.antiAim.active;
             float fps = global.diagnostics.fps, frameTime = global.diagnostics.frameTimeMs;
             global.diagnostics = config.diagnostics;
             global.diagnostics.fps = fps;
@@ -110,7 +126,12 @@ void Runtime::Tick() {
 bool Runtime::StopAndWait() {
     m_Stopping = true;
     for (int i = 0; i < 400 && !m_Stopped; ++i) Sleep(5);
-    if (m_Stopped || !m_LastTick) return true;
+    if (m_Stopped || !m_LastTick) {
+        Features::Chams::Get().Restore();
+        Features::AntiAim::Get().Reset();
+        Features::AnimBreaker::Get().Reset();
+        return true;
+    }
     m_Stopping = false;
     LOG_WARN("Game thread did not acknowledge shutdown; DLL remains loaded");
     return false;

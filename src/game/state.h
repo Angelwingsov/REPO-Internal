@@ -5,6 +5,7 @@
 #include <vector>
 #include <atomic>
 #include "mono/mono_bridge.h"
+#include "unity/unity_math.h"
 
 namespace Game {
 
@@ -23,6 +24,11 @@ struct Offsets {
     int ValuableObject_dollarValueCurrent = 0x005C;
     int ValuableObject_dollarValueOriginal = 0x0058;
     int ValuableObject_committedToExtraction = 0x0090;
+    int ValuableObject_physGrabObject = -1;
+    int ItemAttributes_physGrabObject = -1;
+    int PhysGrabObject_midPoint = -1;
+    int PhysGrabObject_centerPoint = -1;
+    int PhysGrabObject_grabbed = -1;
 
     int ItemManager_spawnedItems = 0x0038;
     int ItemAttributes_itemName = 0x00A8;
@@ -141,12 +147,38 @@ struct Offsets {
 
     int PlayerAvatar_playerAvatarVisuals = 0x0040;
     int PlayerAvatar_PlayerVisionTarget = 0x0068;
+    int PlayerAvatar_localCamera = -1;
+    int PlayerLocalCamera_playerAvatar = -1;
     int PlayerVisionTarget_VisionTransform = 0x0020;
     int CameraPosition_playerTransform = 0x0018;
     int CameraPosition_playerOffset = 0x0020;
     int CameraPosition_overridePositionActive = 0x0034;
     int CameraPosition_overridePositionTimer = 0x0038;
     int CameraPosition_overridePositionTarget = 0x003C;
+
+    int PlayerController_overrideTurnRotationTimer = 0x0254;
+    int PlayerController_overrideTurnRotation = 0x0258;
+    int PlayerController_cameraGameObject = -1;
+
+    int PlayerAvatar_rotationOverrideActive = 0x0162;
+    int PlayerAvatar_rotationDisabled = 0x0160;
+    int PlayerAvatar_isCrouching = 0x0094;
+    int PlayerAvatar_isSprinting = 0x0096;
+    int PlayerAvatar_isCrawling = 0x0098;
+    int PlayerAvatar_isSliding = 0x0099;
+    int PlayerAvatar_isMoving = 0x009A;
+
+    int PlayerAvatarVisuals_headUpTransform = -1;
+    int PlayerAvatarVisuals_headSideTransform = -1;
+    int PlayerAvatarVisuals_bodyTopUpTransform = -1;
+    int PlayerAvatarVisuals_bodyTopSideTransform = -1;
+    int PlayerAvatarVisuals_leanTransform = -1;
+    int PlayerAvatarVisuals_tiltTransform = -1;
+    int PlayerAvatarVisuals_legTwistTransform = -1;
+    int PlayerAvatarVisuals_headTiltOverrideAmount = -1;
+    int PlayerAvatarVisuals_headTiltOverrideTimer = -1;
+    int PlayerAvatarVisuals_leanTwitchOverrideDegrees = -1;
+    int PlayerAvatarVisuals_leanTwitchOverrideTimer = -1;
 };
 
 struct ServerPlayerInfo {
@@ -196,6 +228,11 @@ public:
     MonoClass* klassPlayerVisionTarget = nullptr;
     MonoClass* klassDebugCommandHandler = nullptr;
     MonoClass* klassPlayerCosmetics = nullptr;
+    MonoClass* klassPhotonNetwork = nullptr;
+    MonoClass* klassResources = nullptr;
+    MonoClass* klassObject = nullptr;
+    MonoClass* klassPlayerLocalCamera = nullptr;
+    MonoClass* klassCameraAim = nullptr;
 
     MonoMethod* methodCameraPositionOverride = nullptr;
     MonoMethod* methodShowSelfOverride = nullptr;
@@ -206,6 +243,13 @@ public:
     MonoMethod* methodPlayerAvatarRevive = nullptr;
     MonoMethod* methodPlayerCosmeticsSetupCosmetics = nullptr;
     MonoMethod* methodPlayerCosmeticsSetupColors = nullptr;
+    MonoMethod* methodPhotonInstantiate = nullptr;
+    MonoMethod* methodPhotonInstantiateRoom = nullptr;
+    MonoMethod* methodResourcesLoad = nullptr;
+    MonoMethod* methodObjectInstantiate = nullptr;
+    MonoMethod* methodSemiFuncIsMultiplayer = nullptr;
+    MonoMethod* methodSemiFuncIsMasterClient = nullptr;
+    MonoMethod* methodSemiFuncIsMasterOrSingle = nullptr;
 
     bool UnlockAllCosmetics(int* outUnlockedCount = nullptr, int* outTotalCount = nullptr);
     bool GetCosmeticStats(int& unlockedCount, int& totalCount);
@@ -220,6 +264,9 @@ public:
     bool QueueCosmeticChange(uintptr_t target, bool cosmetics, bool colors);
     bool TakeCosmeticResult(bool& success, std::string& message);
     std::vector<ServerPlayerInfo> GetServerPlayers();
+    bool IsMultiplayer();
+    bool IsMasterClient();
+    bool SpawnItemInternal(const std::string& resourcePath, const Unity::Vector3& position, const Unity::Quaternion& rotation, int mode = 0);
 
 private:
     GameState() = default;

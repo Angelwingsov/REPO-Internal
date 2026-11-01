@@ -5,6 +5,8 @@
 #include "minhook/include/MinHook.h"
 #include "features/removals.h"
 #include "features/player.h"
+#include "features/antiaim.h"
+
 #include "runtime.h"
 #include "core/hook_activity.h"
 #include <mutex>
@@ -242,6 +244,43 @@ bool GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassCameraPosition, "overridePositionTimer", offsets.CameraPosition_overridePositionTimer, 0x0038);
     RESOLVE_FIELD(klassCameraPosition, "overridePositionTarget", offsets.CameraPosition_overridePositionTarget, 0x003C);
 
+    offsets.PlayerController_overrideTurnRotationTimer = bridge.GetFieldOffset(klassPlayerController, "overrideTurnRotationTimer", -1);
+    offsets.PlayerController_overrideTurnRotation = bridge.GetFieldOffset(klassPlayerController, "overrideTurnRotation", -1);
+    offsets.PlayerController_cameraGameObject = bridge.GetFieldOffset(klassPlayerController, "cameraGameObject", -1);
+    offsets.PlayerAvatar_localCamera = bridge.GetFieldOffset(klassPlayerAvatar, "localCamera", -1);
+    offsets.PlayerLocalCamera_playerAvatar = bridge.GetFieldOffset(klassPlayerLocalCamera, "playerAvatar", -1);
+
+    offsets.PlayerAvatar_rotationOverrideActive = bridge.GetFieldOffset(klassPlayerAvatar, "rotationOverrideActive", -1);
+    offsets.PlayerAvatar_rotationDisabled = bridge.GetFieldOffset(klassPlayerAvatar, "rotationDisabled", -1);
+    offsets.PlayerAvatar_isCrouching = bridge.GetFieldOffset(klassPlayerAvatar, "isCrouching", -1);
+    offsets.PlayerAvatar_isSprinting = bridge.GetFieldOffset(klassPlayerAvatar, "isSprinting", -1);
+    offsets.PlayerAvatar_isCrawling = bridge.GetFieldOffset(klassPlayerAvatar, "isCrawling", -1);
+    offsets.PlayerAvatar_isSliding = bridge.GetFieldOffset(klassPlayerAvatar, "isSliding", -1);
+    offsets.PlayerAvatar_isMoving = bridge.GetFieldOffset(klassPlayerAvatar, "isMoving", -1);
+
+    offsets.PlayerAvatarVisuals_headUpTransform = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "headUpTransform", -1);
+    offsets.PlayerAvatarVisuals_headSideTransform = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "headSideTransform", -1);
+    offsets.PlayerAvatarVisuals_bodyTopUpTransform = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "bodyTopUpTransform", -1);
+    offsets.PlayerAvatarVisuals_bodyTopSideTransform = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "bodyTopSideTransform", -1);
+    offsets.PlayerAvatarVisuals_leanTransform = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "leanTransform", -1);
+    offsets.PlayerAvatarVisuals_tiltTransform = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "tiltTransform", -1);
+    offsets.PlayerAvatarVisuals_legTwistTransform = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "legTwistTransform", -1);
+    offsets.PlayerAvatarVisuals_headTiltOverrideAmount = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "headTiltOverrideAmount", -1);
+    offsets.PlayerAvatarVisuals_headTiltOverrideTimer = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "headTiltOverrideTimer", -1);
+    offsets.PlayerAvatarVisuals_leanTwitchOverrideDegrees = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "leanTwitchOverrideDegrees", -1);
+    offsets.PlayerAvatarVisuals_leanTwitchOverrideTimer = bridge.GetFieldOffset(klassPlayerAvatarVisuals, "leanTwitchOverrideTimer", -1);
+
+    offsets.ValuableObject_physGrabObject = bridge.GetFieldOffset(klassValuableObject, "physGrabObject", -1);
+    if (offsets.ValuableObject_physGrabObject > 0) LOG_OK("Field [ValuableObject::physGrabObject] -> 0x%X", offsets.ValuableObject_physGrabObject);
+    offsets.ItemAttributes_physGrabObject = bridge.GetFieldOffset(klassItemAttributes, "physGrabObject", -1);
+    if (offsets.ItemAttributes_physGrabObject > 0) LOG_OK("Field [ItemAttributes::physGrabObject] -> 0x%X", offsets.ItemAttributes_physGrabObject);
+    offsets.PhysGrabObject_midPoint = bridge.GetFieldOffset(klassPhysGrabObject, "midPoint", -1);
+    if (offsets.PhysGrabObject_midPoint > 0) LOG_OK("Field [PhysGrabObject::midPoint] -> 0x%X", offsets.PhysGrabObject_midPoint);
+    offsets.PhysGrabObject_centerPoint = bridge.GetFieldOffset(klassPhysGrabObject, "centerPoint", -1);
+    if (offsets.PhysGrabObject_centerPoint > 0) LOG_OK("Field [PhysGrabObject::centerPoint] -> 0x%X", offsets.PhysGrabObject_centerPoint);
+    offsets.PhysGrabObject_grabbed = bridge.GetFieldOffset(klassPhysGrabObject, "grabbed", -1);
+    if (offsets.PhysGrabObject_grabbed > 0) LOG_OK("Field [PhysGrabObject::grabbed] -> 0x%X", offsets.PhysGrabObject_grabbed);
+
     #undef RESOLVE_FIELD
     return valid;
 }
@@ -287,6 +326,8 @@ bool GameState::Initialize() {
     GET_APP_CLASS(klassPlayerVisionTarget, "PlayerVisionTarget");
     GET_APP_CLASS(klassDebugCommandHandler, "DebugCommandHandler");
     GET_APP_CLASS(klassPlayerCosmetics, "PlayerCosmetics");
+    GET_APP_CLASS(klassPlayerLocalCamera, "PlayerLocalCamera");
+    GET_APP_CLASS(klassCameraAim, "CameraAim");
     if (klassCameraPosition) {
         methodCameraPositionOverride = bridge.FindMethod(klassCameraPosition, "OverridePosition", 2);
         if (methodCameraPositionOverride) {
@@ -345,6 +386,43 @@ bool GameState::Initialize() {
         }
     }
 
+    if (bridge.GetPhotonImage()) {
+        klassPhotonNetwork = bridge.FindClass(bridge.GetPhotonImage(), "Photon.Pun", "PhotonNetwork");
+        if (klassPhotonNetwork) {
+            methodPhotonInstantiate = bridge.FindMethod(klassPhotonNetwork, "Instantiate", 5);
+            methodPhotonInstantiateRoom = bridge.FindMethod(klassPhotonNetwork, "InstantiateRoomObject", 5);
+            if (methodPhotonInstantiate) {
+                LOG_OK("Method [PhotonNetwork::Instantiate] -> %p", methodPhotonInstantiate);
+            }
+            if (methodPhotonInstantiateRoom) {
+                LOG_OK("Method [PhotonNetwork::InstantiateRoomObject] -> %p", methodPhotonInstantiateRoom);
+            }
+        }
+    }
+
+    if (bridge.GetCoreImage()) {
+        klassResources = bridge.FindClass(bridge.GetCoreImage(), "UnityEngine", "Resources");
+        if (klassResources) {
+            methodResourcesLoad = bridge.FindMethod(klassResources, "Load", 1);
+            if (methodResourcesLoad) {
+                LOG_OK("Method [Resources::Load] -> %p", methodResourcesLoad);
+            }
+        }
+        klassObject = bridge.FindClass(bridge.GetCoreImage(), "UnityEngine", "Object");
+        if (klassObject) {
+            methodObjectInstantiate = bridge.FindMethod(klassObject, "Instantiate", 3);
+            if (methodObjectInstantiate) {
+                LOG_OK("Method [Object::Instantiate] -> %p", methodObjectInstantiate);
+            }
+        }
+    }
+
+    if (klassSemiFunc) {
+        methodSemiFuncIsMultiplayer = bridge.FindMethod(klassSemiFunc, "IsMultiplayer", 0);
+        methodSemiFuncIsMasterClient = bridge.FindMethod(klassSemiFunc, "IsMasterClient", 0);
+        methodSemiFuncIsMasterOrSingle = bridge.FindMethod(klassSemiFunc, "IsMasterClientOrSingleplayer", 0);
+    }
+
     #undef GET_APP_CLASS
 
     if (!ResolveOffsets()) return false;
@@ -366,6 +444,8 @@ bool GameState::Initialize() {
 
     Features::Removals::Get().Initialize();
     Features::PlayerMods::Get().Initialize();
+    Features::AntiAim::Get().Initialize();
+
     m_Initialized = (klassEnemyDirector != nullptr || klassValuableDirector != nullptr);
     return m_Initialized;
 }
@@ -719,6 +799,147 @@ std::vector<ServerPlayerInfo> GameState::GetServerPlayers() {
     }
 
     return list;
+}
+
+
+bool GameState::IsMultiplayer() {
+    if (!methodSemiFuncIsMultiplayer) return false;
+    MonoObject* res = Mono::Bridge::Get().InvokeMethod(methodSemiFuncIsMultiplayer, nullptr, nullptr, nullptr);
+    if (!res) return false;
+    bool isMulti = false;
+    Mono::Bridge::Get().Unbox<bool>(res, isMulti);
+    return isMulti;
+}
+
+bool GameState::IsMasterClient() {
+    if (!methodSemiFuncIsMasterClient) return false;
+    MonoObject* res = Mono::Bridge::Get().InvokeMethod(methodSemiFuncIsMasterClient, nullptr, nullptr, nullptr);
+    if (!res) return false;
+    bool isMaster = false;
+    Mono::Bridge::Get().Unbox<bool>(res, isMaster);
+    return isMaster;
+}
+
+bool GameState::SpawnItemInternal(const std::string& resourcePath, const Unity::Vector3& position, const Unity::Quaternion& rotation, int mode) {
+    auto& bridge = Mono::Bridge::Get();
+    if (!bridge.IsReady() || resourcePath.empty()) return false;
+    bridge.AttachCurrentThread();
+
+    bool isMulti = IsMultiplayer();
+    bool isMaster = IsMasterClient();
+
+    bool useClientNetwork = false;
+    bool useRoomNetwork = false;
+
+    if (mode == 1) {
+        useClientNetwork = true;
+    } else if (mode == 2) {
+        useRoomNetwork = true;
+    } else if (mode == 3) {
+        useClientNetwork = false;
+        useRoomNetwork = false;
+    } else {
+        if (isMulti) {
+            if (isMaster) {
+                useRoomNetwork = true;
+            } else {
+                useClientNetwork = true;
+            }
+        }
+    }
+
+    MonoObject* exc = nullptr;
+    if (useClientNetwork || useRoomNetwork) {
+        if (!klassPhotonNetwork && bridge.GetPhotonImage()) {
+            klassPhotonNetwork = bridge.FindClass(bridge.GetPhotonImage(), "Photon.Pun", "PhotonNetwork");
+        }
+        if (!methodPhotonInstantiate && klassPhotonNetwork) {
+            methodPhotonInstantiate = bridge.FindMethod(klassPhotonNetwork, "Instantiate", 5);
+        }
+        if (!methodPhotonInstantiateRoom && klassPhotonNetwork) {
+            methodPhotonInstantiateRoom = bridge.FindMethod(klassPhotonNetwork, "InstantiateRoomObject", 5);
+        }
+
+        MonoMethod* targetMethod = useRoomNetwork ? methodPhotonInstantiateRoom : methodPhotonInstantiate;
+        if (!targetMethod && useRoomNetwork) {
+            targetMethod = methodPhotonInstantiate;
+        }
+
+        if (targetMethod) {
+            MonoString* monoStr = bridge.CreateString(resourcePath.c_str());
+            if (!monoStr) return false;
+
+            Unity::Vector3 pos = position;
+            Unity::Quaternion rot = rotation;
+            uint8_t group = 0;
+
+            void* args[5] = {
+                monoStr,
+                &pos,
+                &rot,
+                &group,
+                nullptr
+            };
+
+            MonoObject* spawnedObj = bridge.InvokeMethod(targetMethod, nullptr, args, &exc);
+            if (exc) {
+                LOG_ERR("SpawnItemInternal network exception: %p", exc);
+                if (useRoomNetwork && methodPhotonInstantiate) {
+                    exc = nullptr;
+                    spawnedObj = bridge.InvokeMethod(methodPhotonInstantiate, nullptr, args, &exc);
+                }
+            }
+            if (spawnedObj && !exc) {
+                LOG_OK("SpawnItemInternal spawned %s (Network %s)", resourcePath.c_str(), (targetMethod == methodPhotonInstantiateRoom && !exc) ? "Room" : "Client");
+                return true;
+            }
+        }
+    }
+
+    if (!klassResources && bridge.GetCoreImage()) {
+        klassResources = bridge.FindClass(bridge.GetCoreImage(), "UnityEngine", "Resources");
+    }
+    if (!methodResourcesLoad && klassResources) {
+        methodResourcesLoad = bridge.FindMethod(klassResources, "Load", 1);
+    }
+    if (!klassObject && bridge.GetCoreImage()) {
+        klassObject = bridge.FindClass(bridge.GetCoreImage(), "UnityEngine", "Object");
+    }
+    if (!methodObjectInstantiate && klassObject) {
+        methodObjectInstantiate = bridge.FindMethod(klassObject, "Instantiate", 3);
+    }
+
+    if (methodResourcesLoad && methodObjectInstantiate) {
+        MonoString* monoStr = bridge.CreateString(resourcePath.c_str());
+        if (!monoStr) return false;
+
+        void* loadArgs[1] = { monoStr };
+        MonoObject* prefab = bridge.InvokeMethod(methodResourcesLoad, nullptr, loadArgs, &exc);
+        if (!prefab || exc) {
+            LOG_ERR("Resources.Load failed for %s", resourcePath.c_str());
+            return false;
+        }
+
+        Unity::Vector3 pos = position;
+        Unity::Quaternion rot = rotation;
+        void* instArgs[3] = {
+            prefab,
+            &pos,
+            &rot
+        };
+
+        MonoObject* spawnedObj = bridge.InvokeMethod(methodObjectInstantiate, nullptr, instArgs, &exc);
+        if (exc) {
+            LOG_ERR("Object.Instantiate exception: %p", exc);
+            return false;
+        }
+        if (spawnedObj) {
+            LOG_OK("SpawnItemInternal spawned %s (Local)", resourcePath.c_str());
+            return true;
+        }
+    }
+
+    return false;
 }
 
 }

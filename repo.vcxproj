@@ -218,6 +218,11 @@
     <ClCompile Include="src\features\thirdperson.cpp" />
     <ClCompile Include="src\features\spectatorlist.cpp" />
     <ClCompile Include="src\features\removals.cpp" />
+    <ClCompile Include="src\features\chams.cpp" />
+    <ClCompile Include="src\features\antiaim.cpp" />
+    <ClCompile Include="src\features\animbreaker.cpp" />
+
+    <ClCompile Include="src\features\spawner.cpp" />
     <ClCompile Include="src\game\entities.cpp" />
     <ClCompile Include="src\game\state.cpp" />
     <ClCompile Include="src\game\runtime.cpp" />
@@ -256,6 +261,11 @@
     <ClInclude Include="src\features\thirdperson.h" />
     <ClInclude Include="src\features\spectatorlist.h" />
     <ClInclude Include="src\features\removals.h" />
+    <ClInclude Include="src\features\chams.h" />
+    <ClInclude Include="src\features\antiaim.h" />
+    <ClInclude Include="src\features\animbreaker.h" />
+
+    <ClInclude Include="src\features\spawner.h" />
     <ClInclude Include="src\game\entities.h" />
     <ClInclude Include="src\game\player_bounds.h" />
     <ClInclude Include="src\game\state.h" />

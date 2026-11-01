@@ -6,6 +6,7 @@
 #include "core/config_store.h"
 #include "game/state.h"
 #include "game/runtime.h"
+#include "features/spawner.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -196,6 +197,25 @@ void Menu::Shutdown() {
 void Menu::Render() {
     if(!Globals::Gui_Ctx) return;
     auto& cfg=Core::Config::Get();
+    static bool s_PrevVisible = false;
+    if (cfg.menu.isVisible != s_PrevVisible) {
+        s_PrevVisible = cfg.menu.isVisible;
+        if (Globals::Gui_Ctx) {
+            for (auto* win : Globals::Gui_Ctx->Windows) {
+                if (!win) continue;
+                win->Dragging = false;
+                win->Resizing = false;
+                win->Block = false;
+                win->SelectedItem = "";
+                win->ItemActive.clear();
+                for (auto* popup : win->PopUpWindows) {
+                    if (popup) popup->Opened = false;
+                }
+            }
+            Globals::Gui_Ctx->AwaitingInput = false;
+        }
+    }
+
     float fc=ImGui::GetIO().DeltaTime*255*10;
     if(!cfg.menu.isVisible&&alpha>0) alpha=std::clamp(alpha-fc/255.f,0.f,1.f);
     if(cfg.menu.isVisible&&alpha<1) alpha=std::clamp(alpha+fc/255.f,0.f,1.f);
@@ -205,6 +225,7 @@ void Menu::Render() {
     ui::GetInputFromWindow(Render::Draw->GetWindow());
     ImGui::SetNextFrameWantCaptureMouse(cfg.menu.isVisible);
     ImGui::SetNextFrameWantCaptureKeyboard(cfg.menu.isVisible);
+    if (!Globals::Gui_Ctx->Windows.empty()) ui::SetCurrentWindow(Globals::Gui_Ctx->Windows.front());
     ui::SetNextWindowSize({660,560});
     ui::Begin("Main",GuiFlags_None);
     ui::TabButton("A",&currentTab,0,7);
@@ -263,34 +284,14 @@ void Menu::Render() {
         ui::Checkbox("Zero gravity",&cfg.troll.zeroGravity);
         ui::EndChild();break;
     case 2:
-        ui::BeginChild("Player ESP",{Vec2(0,0),Vec2(3,6)});
+        ui::BeginChild("Player ESP",{Vec2(0,0),Vec2(3,5)});
         ui::Checkbox("Enabled",&cfg.player.enabled);Color("##PlayerColor",cfg.player.color);
         EspOptions(cfg.player.box2D,cfg.player.cornerBox,cfg.player.snaplines,cfg.player.showName,cfg.player.showDistance);
         ui::Checkbox("Health",&cfg.player.showHealth);
         ui::Checkbox("Hide local player",&cfg.player.hideLocalPlayer);
         ui::Label("Dead player");Color("##DeadColor",cfg.player.colorDead);
         ui::EndChild();
-        ui::BeginChild("General ESP",{Vec2(0,8),Vec2(3,2)});
-        {float previous=cfg.monster.maxDistance;float distance=previous;ui::SliderFloat("Maximum distance",&distance,10,500,"%.0f m",1);
-        if(distance!=previous) cfg.monster.maxDistance=cfg.player.maxDistance=cfg.valuable.maxDistance=cfg.item.maxDistance=distance;}
-        ui::Checkbox("Text background",&cfg.visual.textBackground);
-        ui::EndChild();
-        ui::BeginChild("Monster ESP",{Vec2(6,0),Vec2(3,3)});
-        ui::Checkbox("Enabled",&cfg.monster.enabled);Color("##MonsterColor",cfg.monster.colorDefault);
-        EspOptions(cfg.monster.box2D,cfg.monster.cornerBox,cfg.monster.snaplines,cfg.monster.showName,cfg.monster.showDistance);
-        ui::Checkbox("Highlight chasing",&cfg.monster.highlightChasing);
-        ui::EndChild();
-        ui::BeginChild("Items & loot",{Vec2(6,5),Vec2(3,5)});
-        {bool enabled=cfg.valuable.enabled||cfg.item.enabled;ui::Checkbox("Enabled",&enabled);cfg.valuable.enabled=cfg.item.enabled=enabled;}
-        ui::Checkbox("Name",&cfg.valuable.showName);cfg.item.showName=cfg.valuable.showName;
-        ui::Checkbox("Price",&cfg.valuable.showValue);cfg.item.showValue=cfg.valuable.showValue;
-        ui::Checkbox("Distance",&cfg.valuable.showDistance);cfg.item.showDistance=cfg.valuable.showDistance;
-        ui::Checkbox("Hide extracted",&cfg.valuable.hideExtracted);
-        ui::Label("Valuable color");Color("##LootColor",cfg.valuable.color);
-        ui::Label("Item color");Color("##ItemColor",cfg.item.color);
-        ui::EndChild();break;
-    case 3:
-        ui::BeginChild("Removals",{Vec2(0,0),Vec2(3,10)});
+        ui::BeginChild("Removals",{Vec2(0,7),Vec2(3,3)});
         ui::Checkbox("Enabled",&cfg.removals.enabled);
         RemovalGroup("Environment",{{"Fog",&cfg.removals.noFog}});
         RemovalGroup("Post-processing",{
@@ -307,11 +308,29 @@ void Menu::Render() {
             {"Glitches",&cfg.removals.noCameraGlitch},
             {"Damage overlay",&cfg.removals.noHurtOverlay}});
         ui::EndChild();
-        ui::BeginChild("Fullbright",{Vec2(6,0),Vec2(3,4)});
+        ui::BeginChild("Monster ESP",{Vec2(6,0),Vec2(3,3)});
+        ui::Checkbox("Enabled",&cfg.monster.enabled);Color("##MonsterColor",cfg.monster.colorDefault);
+        EspOptions(cfg.monster.box2D,cfg.monster.cornerBox,cfg.monster.snaplines,cfg.monster.showName,cfg.monster.showDistance);
+        ui::Checkbox("Highlight chasing",&cfg.monster.highlightChasing);
+        ui::EndChild();
+        ui::BeginChild("Items & loot",{Vec2(6,5),Vec2(3,5)});
+        {bool enabled=cfg.valuable.enabled||cfg.item.enabled;ui::Checkbox("Enabled",&enabled);cfg.valuable.enabled=cfg.item.enabled=enabled;}
+        ui::Checkbox("Name",&cfg.valuable.showName);cfg.item.showName=cfg.valuable.showName;
+        ui::Checkbox("Price",&cfg.valuable.showValue);cfg.item.showValue=cfg.valuable.showValue;
+        ui::Checkbox("Distance",&cfg.valuable.showDistance);cfg.item.showDistance=cfg.valuable.showDistance;
+        ui::Checkbox("Hide extracted",&cfg.valuable.hideExtracted);
+        ui::Label("Valuable color");Color("##LootColor",cfg.valuable.color);
+        ui::Label("Item color");Color("##ItemColor",cfg.item.color);
+        {float previous=cfg.monster.maxDistance;float distance=previous;ui::SliderFloat("Maximum distance",&distance,10,500,"%.0f m",1);
+        if(distance!=previous) cfg.monster.maxDistance=cfg.player.maxDistance=cfg.valuable.maxDistance=cfg.item.maxDistance=distance;}
+        ui::Checkbox("Text background",&cfg.visual.textBackground);
+        ui::EndChild();break;
+    case 3:
+        ui::BeginChild("Fullbright",{Vec2(0,0),Vec2(3,4)});
         ui::Checkbox("Enabled",&cfg.fullbright.enabled);
         ui::SliderFloat("Brightness",&cfg.fullbright.brightness,.1f,3,"%.2f",.05f);
         ui::EndChild();
-        ui::BeginChild("Crosshair",{Vec2(6,6),Vec2(3,4)});
+        ui::BeginChild("Crosshair",{Vec2(6,0),Vec2(3,4)});
         ui::Checkbox("Enabled",&cfg.visual.drawCrosshair);Color("##CrosshairColor",cfg.visual.crosshairColor);
         ui::SliderFloat("Size",&cfg.visual.crosshairSize,2,20,"%.0f px",1);
         ui::EndChild();break;
@@ -353,10 +372,156 @@ void Menu::Render() {
         ui::BeginChild("Configs",{Vec2(6,0),Vec2(3,10)});
         Configs();
         ui::EndChild();break;
-    case 7:
-        ui::BeginChild("Controls",{Vec2(0,0),Vec2(3,10)});
-        Status("DELETE / INSERT open the menu. Right-click a keybind for activation modes.");
-        ui::EndChild();break;
+    case 7: {
+        static int tab7Section = 0;
+        if (tab7Section == 0) {
+            auto& spawner = Features::Spawner::Get();
+            std::vector<int> filtered = spawner.GetFilteredIndices(
+                static_cast<Features::ItemCategory>(cfg.spawner.selectedCategory),
+                cfg.spawner.searchFilter
+            );
+
+            ui::BeginChild("Item Catalog", {Vec2(0,0), Vec2(3,10)});
+            ui::SingleSelect("Section", &tab7Section, std::vector<const char*>{"Item Spawner", "Anti-Aim / Breakers"});
+            ui::SingleSelect("Category", &cfg.spawner.selectedCategory, std::vector<const char*>{
+                "All Items",
+                "Weapons & Grenades",
+                "Utility & Carts",
+                "Upgrades",
+                "Survival & Medical",
+                "Valuables / Loot"
+            });
+            ui::InputText("Search", cfg.spawner.searchFilter);
+
+            static int listTop = 0;
+            if (ui::BeginListbox("##SpawnerItemsList")) {
+                auto* list = ui::GetCurrentWindow();
+                int totalCount = static_cast<int>(filtered.size());
+                int visibleSlots = 6;
+                int maxScroll = (std::max)(0, totalCount - visibleSlots);
+                if (ui::IsInsideWindow(list)) {
+                    listTop -= static_cast<int>(Globals::Gui_Ctx->MouseWheel * 3);
+                }
+                listTop = std::clamp(listTop, 0, maxScroll);
+
+                for (int i = listTop; i < (std::min)(listTop + visibleSlots, totalCount); ++i) {
+                    int realIdx = filtered[i];
+                    const auto* item = spawner.GetItem(realIdx);
+                    if (item) {
+                        bool isSel = (cfg.spawner.selectedItemIndex == realIdx);
+                        if (ui::Selectable(item->name.c_str(), isSel)) {
+                            cfg.spawner.selectedItemIndex = realIdx;
+                        }
+                    }
+                }
+
+                if (maxScroll > 0) {
+                    int opacity = Globals::Gui_Ctx->MenuAlpha;
+                    Render::Draw->FilledRect(list->Pos + Vec2(list->Size.x - 6, 1), Vec2(5, list->Size.y - 2), ImColor(40, 40, 40, opacity));
+                    float thumb = (list->Size.y - 4) * static_cast<float>(visibleSlots) / static_cast<float>(totalCount);
+                    Render::Draw->FilledRect(list->Pos + Vec2(list->Size.x - 5, 2 + (list->Size.y - 4 - thumb) * listTop / maxScroll), Vec2(3, thumb), ImColor(65, 65, 65, opacity));
+                }
+                ui::EndListbox();
+            }
+
+            const auto* selItem = spawner.GetItem(cfg.spawner.selectedItemIndex);
+            if (selItem) {
+                ui::Label(("Selected: " + selItem->name).c_str());
+            } else {
+                ui::Label("Select an item above");
+            }
+            ui::EndChild();
+
+            ui::BeginChild("Spawner Controls", {Vec2(6,0), Vec2(3,10)});
+            if (ui::Button("Spawn Selected Item")) {
+                spawner.QueueSpawn(cfg.spawner.selectedItemIndex, cfg.spawner.spawnAmount,
+                                   cfg.spawner.spawnAtCrosshair, cfg.spawner.spawnDistance, cfg.spawner.spawnMode);
+            }
+            if (ui::Button("Spawn All In Category")) {
+                spawner.QueueSpawnAll(cfg.spawner.spawnAtCrosshair, cfg.spawner.spawnDistance, cfg.spawner.spawnMode);
+            }
+
+            ui::SliderInt("Amount", &cfg.spawner.spawnAmount, 1, 20, "%d pcs");
+            ui::SliderFloat("Distance", &cfg.spawner.spawnDistance, 0.5f, 15.0f, "%.1f m", 0.5f);
+            ui::Checkbox("Spawn at crosshair", &cfg.spawner.spawnAtCrosshair);
+
+            ui::SingleSelect("Network mode", &cfg.spawner.spawnMode, std::vector<const char*>{
+                "Auto (Smart)",
+                "Client Network (Non-Host OK)",
+                "Room Object (Host only)",
+                "Local Only"
+            });
+
+            ui::Label("Spawn hotkey");
+            KeyBind("##SpawnHotkey", cfg.spawner.hotkey, cfg.spawner.hotkeyMode);
+
+            if (ui::Button("Quick: Shotgun")) {
+                for (int i = 0; i < spawner.GetItemCount(); ++i) {
+                    if (spawner.GetItem(i)->name == "Shotgun") {
+                        cfg.spawner.selectedItemIndex = i;
+                        spawner.QueueSpawn(i, 1, cfg.spawner.spawnAtCrosshair, cfg.spawner.spawnDistance, cfg.spawner.spawnMode);
+                        break;
+                    }
+                }
+            }
+            if (ui::Button("Quick: Power Crystal")) {
+                for (int i = 0; i < spawner.GetItemCount(); ++i) {
+                    if (spawner.GetItem(i)->name == "Power Crystal") {
+                        cfg.spawner.selectedItemIndex = i;
+                        spawner.QueueSpawn(i, 1, cfg.spawner.spawnAtCrosshair, cfg.spawner.spawnDistance, cfg.spawner.spawnMode);
+                        break;
+                    }
+                }
+            }
+
+            std::string statusText;
+            if (spawner.TakeStatus(statusText)) {
+            } else if (cfg.spawner.hasStatus) {
+                statusText = cfg.spawner.statusMessage;
+            }
+            if (!statusText.empty()) {
+                Status(statusText);
+            }
+            ui::EndChild();
+        } else {
+            ui::BeginChild("Anti-Aim", {Vec2(0,0), Vec2(3,10)});
+            ui::SingleSelect("Section", &tab7Section, std::vector<const char*>{"Item Spawner", "Anti-Aim / Breakers"});
+            ui::Checkbox("Enabled", &cfg.antiAim.enabled);
+            KeyBind("##AntiAimKey", cfg.antiAim.toggleKey, cfg.antiAim.keyMode);
+            ui::SingleSelect("Yaw mode", &cfg.antiAim.yawMode, std::vector<const char*>{"Off", "Spinbot", "Jitter", "Backwards", "Sideways", "Random"});
+            if (cfg.antiAim.yawMode == 1) ui::SliderFloat("Spin speed", &cfg.antiAim.spinSpeed, 30.0f, 1440.0f, "%.0f deg/s", 10.0f);
+            if (cfg.antiAim.yawMode == 2) ui::SliderFloat("Jitter angle", &cfg.antiAim.jitterRange, 15.0f, 180.0f, "%.0f deg", 5.0f);
+            ui::SingleSelect("Pitch mode", &cfg.antiAim.pitchMode, std::vector<const char*>{"Off", "Down (Emotion)", "Up (Sky)", "Jitter", "Zero (Flat)", "Spin"});
+            ui::SingleSelect("Body lean", &cfg.antiAim.rollMode, std::vector<const char*>{"Off", "Static lean", "Jitter lean", "Spasm twitch"});
+            if (cfg.antiAim.rollMode == 1 || cfg.antiAim.rollMode == 2) ui::SliderFloat("Lean angle", &cfg.antiAim.leanAngle, -80.0f, 80.0f, "%.0f deg", 1.0f);
+            ui::EndChild();
+
+            ui::BeginChild("Animation Breakers", {Vec2(6,0), Vec2(3,10)});
+            ui::Checkbox("Enabled", &cfg.animBreaker.enabled);
+            ui::Checkbox("Moonwalk / slide glide", &cfg.animBreaker.slideWalk);
+            ui::Checkbox("Frozen legs (statue)", &cfg.animBreaker.staticLegs);
+            ui::Checkbox("Super crawl (on belly)", &cfg.animBreaker.forceCrawl);
+            ui::Checkbox("Pose spammer", &cfg.animBreaker.poseSpammer);
+            if (cfg.animBreaker.poseSpammer) ui::SliderFloat("Spam frequency", &cfg.animBreaker.poseSpamSpeed, 2.0f, 30.0f, "%.0f Hz", 1.0f);
+            ui::Checkbox("Exorcist head spin", &cfg.animBreaker.headBreaker);
+            if (cfg.animBreaker.headBreaker) ui::SliderFloat("Head spin speed", &cfg.animBreaker.headSpinSpeed, 60.0f, 1440.0f, "%.0f deg/s", 10.0f);
+            ui::Checkbox("Spine spasm (scoliosis)", &cfg.animBreaker.spineBreaker);
+            if (cfg.animBreaker.spineBreaker) ui::SliderFloat("Spasm intensity", &cfg.animBreaker.spineTwitchAmount, 10.0f, 90.0f, "%.0f deg", 5.0f);
+            if (ui::Button("Enable all breakers")) {
+                cfg.animBreaker.enabled = true;
+                cfg.animBreaker.slideWalk = true;
+                cfg.animBreaker.poseSpammer = true;
+                cfg.animBreaker.headBreaker = true;
+                cfg.animBreaker.spineBreaker = true;
+            }
+            if (ui::Button("Reset all breakers")) {
+                cfg.animBreaker = Core::AnimBreakerConfig();
+            }
+            Status("Visible to other players in multiplayer.");
+            ui::EndChild();
+        }
+        break;
+    }
     }
     ui::SetCurrentWindow(Globals::Gui_Ctx->Windows.front());
     ui::End();

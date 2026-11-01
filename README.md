@@ -58,20 +58,3 @@ Release x64 builds include a matching PDB in the output directory. Keep it with 
 DLL when diagnosing a crash. The game's working directory contains `repo_cheat.log`
 and, after an unhandled exception, `repo_cheat_crash.log` and `repo_cheat_crash.dmp`.
 The crash report records the build, module, and relative fault address.
-
-## Checks
-
-Run native memory and concurrency tests from a Windows checkout with
-Visual Studio C++ tools installed:
-
-```bat
-tests\run_native_tests.cmd
-```
-
-The native suite also checks profile file operations, validation and player ESP bounds.
-
-Run `tests\run_ui_tests.cmd` to render and check the original GUI without injecting
-the game. Previews are written to `build/ui-preview/`.
-
-These checks exercise native boundaries with an in-memory test setup. Live session
-testing is still required for scene transitions and third-party mods.

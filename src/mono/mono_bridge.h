@@ -44,6 +44,8 @@ public:
 
     std::string ReadMonoString(MonoString* mstr);
     MonoString* CreateString(const char* text);
+    MonoObject* CreateObject(MonoClass* klass);
+    MonoArray* CreateArray(MonoClass* elementClass, uintptr_t length);
     MonoObject* GetReflectionType(MonoClass* klass);
     uint32_t PinObject(MonoObject* object);
     void FreePin(uint32_t handle);
@@ -74,6 +76,8 @@ public:
     mono_free_t m_mono_free = nullptr;
     mono_gchandle_new_t m_mono_gchandle_new = nullptr;
     mono_gchandle_free_t m_mono_gchandle_free = nullptr;
+    mono_object_new_t m_mono_object_new = nullptr;
+    mono_array_new_t m_mono_array_new = nullptr;
 
 private:
     Bridge() = default;

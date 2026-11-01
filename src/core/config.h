@@ -45,6 +45,12 @@ struct PlayerESPConfig {
     float colorDead[4] = { 0.65f, 0.65f, 0.65f, 0.8f };
 };
 
+struct ChamsConfig {
+    bool enabled = false;
+    float colorVisible[4] = { 0.20f, 0.95f, 0.30f, 1.0f };
+    float colorInvisible[4] = { 0.95f, 0.20f, 0.20f, 1.0f };
+};
+
 struct ValuableConfig {
     bool enabled = true;
     bool showName = true;
@@ -148,6 +154,39 @@ struct TrollConfig {
     float animSpeed = 3.0f;
 };
 
+struct AntiAimConfig {
+    bool enabled = false;
+    int toggleKey = 0;
+    int keyMode = 1;
+    bool active = false;
+
+    int yawMode = 1;
+    float spinSpeed = 360.0f;
+    float jitterRange = 90.0f;
+
+    int pitchMode = 1;
+
+    int rollMode = 0;
+    float leanAngle = 35.0f;
+};
+
+struct AnimBreakerConfig {
+    bool enabled = false;
+
+    bool slideWalk = false;
+    bool staticLegs = false;
+    bool forceCrawl = false;
+
+    bool poseSpammer = false;
+    float poseSpamSpeed = 10.0f;
+
+    bool headBreaker = false;
+    float headSpinSpeed = 360.0f;
+
+    bool spineBreaker = false;
+    float spineTwitchAmount = 60.0f;
+};
+
 struct RemovalsConfig {
     bool enabled = false;
     bool noFog = true;
@@ -194,6 +233,20 @@ struct MenuConfig {
     int color[4] = {163, 212, 31, 255};
 };
 
+struct SpawnerConfig {
+    int selectedCategory = 0;
+    int selectedItemIndex = 0;
+    int spawnAmount = 1;
+    float spawnDistance = 2.0f;
+    bool spawnAtCrosshair = false;
+    int spawnMode = 0;
+    int hotkey = 0;
+    int hotkeyMode = 1;
+    char searchFilter[64] = {};
+    bool hasStatus = false;
+    char statusMessage[128] = "Ready";
+};
+
 struct Diagnostics {
     int monstersFound = 0;
     int playersFound = 0;
@@ -216,6 +269,7 @@ public:
 
     MonsterConfig monster;
     PlayerESPConfig player;
+    ChamsConfig chams;
     ValuableConfig valuable;
     ItemConfig item;
     MovementConfig movement;
@@ -230,6 +284,9 @@ public:
     CosmeticParserConfig cosmeticParser;
     RemovalsConfig removals;
     FullbrightConfig fullbright;
+    SpawnerConfig spawner;
+    AntiAimConfig antiAim;
+    AnimBreakerConfig animBreaker;
 
     void ResetToDefaults();
 

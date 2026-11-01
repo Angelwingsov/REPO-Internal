@@ -47,9 +47,26 @@ bool Engine::Initialize() {
     if (auto* renderer = bridge.FindClass(coreImage, "UnityEngine", "Renderer")) {
         m_methodRendererGetBounds = bridge.FindMethod(renderer, "get_bounds", 0);
         m_methodRendererGetEnabled = bridge.FindMethod(renderer, "get_enabled", 0);
+        m_klassRenderer = renderer;
+        m_methodRendererGetSharedMaterial = bridge.FindMethod(renderer, "get_sharedMaterial", 0);
+        m_methodRendererSetSharedMaterial = bridge.FindMethod(renderer, "set_sharedMaterial", 1);
+        m_methodRendererGetSharedMaterials = bridge.FindMethod(renderer, "get_sharedMaterials", 0);
+        m_methodRendererSetSharedMaterials = bridge.FindMethod(renderer, "set_sharedMaterials", 1);
+    }
+    m_klassShader = bridge.FindClass(coreImage, "UnityEngine", "Shader");
+    if (m_klassShader) {
+        m_methodShaderFind = bridge.FindMethod(m_klassShader, "Find", 1);
+        LOG_OK("UnityEngine.Shader resolved (Find: %p)", m_methodShaderFind);
+    }
+    m_klassMaterial = bridge.FindClass(coreImage, "UnityEngine", "Material");
+    if (m_klassMaterial) {
+        m_methodMaterialCtor = bridge.FindMethod(m_klassMaterial, ".ctor", 1);
+        m_methodMaterialSetInt = bridge.FindMethod(m_klassMaterial, "SetInt", 2);
+        m_methodMaterialSetColor = bridge.FindMethod(m_klassMaterial, "SetColor", 2);
+        LOG_OK("UnityEngine.Material resolved (ctor: %p, SetInt: %p, SetColor: %p)",
+               m_methodMaterialCtor, m_methodMaterialSetInt, m_methodMaterialSetColor);
     }
     if (auto* gameObject = bridge.FindClass(coreImage, "UnityEngine", "GameObject")) {
-
         m_methodGetComponentsInternal = bridge.FindMethod(gameObject, "GetComponentsInternal", 6);
     }
 
@@ -63,9 +80,13 @@ bool Engine::Initialize() {
     if (m_klassTransform) {
         m_methodGetPosition = bridge.FindMethod(m_klassTransform, "get_position", 0);
         m_methodSetPosition = bridge.FindMethod(m_klassTransform, "set_position", 1);
+        m_methodGetRotation = bridge.FindMethod(m_klassTransform, "get_rotation", 0);
+        m_methodSetRotation = bridge.FindMethod(m_klassTransform, "set_rotation", 1);
         m_methodGetForward = bridge.FindMethod(m_klassTransform, "get_forward", 0);
         m_methodGetRight = bridge.FindMethod(m_klassTransform, "get_right", 0);
         m_methodGetUp = bridge.FindMethod(m_klassTransform, "get_up", 0);
+        m_methodSetLocalEulerAngles = bridge.FindMethod(m_klassTransform, "set_localEulerAngles", 1);
+        m_methodSetLocalRotation = bridge.FindMethod(m_klassTransform, "set_localRotation", 1);
         LOG_OK("UnityEngine.Transform resolved (get_position: %p, set_position: %p, get_forward: %p)",
                m_methodGetPosition, m_methodSetPosition, m_methodGetForward);
     }
@@ -73,7 +94,8 @@ bool Engine::Initialize() {
     m_klassObject = bridge.FindClass(coreImage, "UnityEngine", "Object");
     if (m_klassObject) {
         m_methodGetName = bridge.FindMethod(m_klassObject, "get_name", 0);
-        LOG_OK("UnityEngine.Object resolved (get_name: %p)", m_methodGetName);
+        m_methodSetHideFlags = bridge.FindMethod(m_klassObject, "set_hideFlags", 1);
+        LOG_OK("UnityEngine.Object resolved (get_name: %p, set_hideFlags: %p)", m_methodGetName, m_methodSetHideFlags);
     }
 
     m_klassCursor = bridge.FindClass(coreImage, "UnityEngine", "Cursor");
@@ -125,12 +147,14 @@ bool Engine::Initialize() {
     if (physImage) {
         m_klassPhysics = bridge.FindClass(physImage, "UnityEngine", "Physics");
         if (m_klassPhysics) {
-
-        m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 5);
+            m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 5);
+            m_methodLinecast4 = bridge.FindMethod(m_klassPhysics, "Linecast", 4);
+            m_methodLinecast2 = bridge.FindMethod(m_klassPhysics, "Linecast", 2);
             if (!m_methodLinecast) {
-                m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 2);
+                m_methodLinecast = m_methodLinecast4 ? m_methodLinecast4 : m_methodLinecast2;
             }
-            LOG_OK("UnityEngine.Physics resolved (Linecast: %p)", m_methodLinecast);
+            LOG_OK("UnityEngine.Physics resolved (Linecast5: %p, Linecast4: %p, Linecast2: %p)",
+                   m_methodLinecast, m_methodLinecast4, m_methodLinecast2);
         }
 
         m_klassRigidbody = bridge.FindClass(physImage, "UnityEngine", "Rigidbody");
@@ -229,6 +253,50 @@ void Engine::SetTransformPosition(MonoObject* transformObj, const Vector3& pos) 
     void* args[1] = { &p };
     MonoObject* exc = nullptr;
     Mono::Bridge::Get().InvokeMethod(m_methodSetPosition, transformObj, args, &exc);
+}
+
+void Engine::SetTransformLocalEulerAngles(MonoObject* transformObj, const Vector3& angles) {
+    if (!transformObj || !m_methodSetLocalEulerAngles || !IsValidUnityObject(transformObj)) {
+        return;
+    }
+    Vector3 a = angles;
+    void* args[1] = { &a };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodSetLocalEulerAngles, transformObj, args, &exc);
+}
+
+Quaternion Engine::GetTransformRotation(MonoObject* transformObj) {
+    if (!transformObj || !m_methodGetRotation || !IsValidUnityObject(transformObj)) {
+        return Quaternion{};
+    }
+    MonoObject* exc = nullptr;
+    MonoObject* res = Mono::Bridge::Get().InvokeMethod(m_methodGetRotation, transformObj, nullptr, &exc);
+    if (!res || exc) return Quaternion{};
+    Quaternion rot;
+    if (Mono::Bridge::Get().Unbox(res, rot) && rot.IsValid()) {
+        return rot;
+    }
+    return Quaternion{};
+}
+
+void Engine::SetTransformRotation(MonoObject* transformObj, const Quaternion& rot) {
+    if (!transformObj || !m_methodSetRotation || !IsValidUnityObject(transformObj)) {
+        return;
+    }
+    Quaternion r = rot;
+    void* args[1] = { &r };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodSetRotation, transformObj, args, &exc);
+}
+
+void Engine::SetTransformLocalRotation(MonoObject* transformObj, const Quaternion& rot) {
+    if (!transformObj || !m_methodSetLocalRotation || !IsValidUnityObject(transformObj)) {
+        return;
+    }
+    Quaternion r = rot;
+    void* args[1] = { &r };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodSetLocalRotation, transformObj, args, &exc);
 }
 
 void Engine::SetRigidbodyPosition(MonoObject* rbObj, const Vector3& pos) {
@@ -456,9 +524,9 @@ struct InternalRaycastHit {
     float distance;
     Vector2 uv;
     int collider;
-    char pad[32];
 };
 #pragma pack(pop)
+static_assert(sizeof(InternalRaycastHit) == 44, "InternalRaycastHit size must be 44 bytes");
 
 bool Engine::Linecast(const Vector3& start, const Vector3& end, Vector3& outHitPoint) {
     if (!m_methodLinecast) return false;
@@ -488,6 +556,151 @@ bool Engine::Linecast(const Vector3& start, const Vector3& end, Vector3& outHitP
         }
     }
     return false;
+}
+
+bool Engine::CheckLineOfSight(const Vector3& start, const Vector3& end, int layerMask) {
+    if (!start.IsValid() || !end.IsValid()) return true;
+
+    Vector3 dir = end - start;
+    float dist = dir.Length();
+    if (dist <= 0.6f) return true;
+
+    Vector3 normDir = dir / dist;
+    Vector3 s = start + (normDir * 0.35f);
+    Vector3 e = end - (normDir * 0.20f);
+
+    int triggerInteraction = 1;
+    MonoObject* exc = nullptr;
+    MonoObject* res = nullptr;
+
+    if (m_methodLinecast4) {
+        void* params[4] = { &s, &e, &layerMask, &triggerInteraction };
+        res = Mono::Bridge::Get().InvokeMethod(m_methodLinecast4, nullptr, params, &exc);
+    } else if (m_methodLinecast2) {
+        void* params[2] = { &s, &e };
+        res = Mono::Bridge::Get().InvokeMethod(m_methodLinecast2, nullptr, params, &exc);
+    } else if (m_methodLinecast) {
+        InternalRaycastHit hit{};
+        void* params[5] = { &s, &e, &hit, &layerMask, &triggerInteraction };
+        res = Mono::Bridge::Get().InvokeMethod(m_methodLinecast, nullptr, params, &exc);
+    }
+
+    if (!res || exc) return true;
+
+    bool didHit = false;
+    if (Mono::Bridge::Get().Unbox(res, didHit)) {
+        return !didHit;
+    }
+    return true;
+}
+
+MonoObject* Engine::FindShader(const char* name) {
+    if (!name || !m_methodShaderFind) return nullptr;
+    auto& bridge = Mono::Bridge::Get();
+    MonoString* str = bridge.CreateString(name);
+    if (!str) return nullptr;
+    void* args[1] = { str };
+    MonoObject* exc = nullptr;
+    return bridge.InvokeMethod(m_methodShaderFind, nullptr, args, &exc);
+}
+
+void Engine::SetHideFlags(MonoObject* obj, int flags) {
+    if (!obj || !m_methodSetHideFlags || !IsValidUnityObject(obj)) return;
+    int f = flags;
+    void* args[1] = { &f };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodSetHideFlags, obj, args, &exc);
+}
+
+MonoObject* Engine::CreateMaterial(MonoObject* shader) {
+    if (!shader || !m_klassMaterial || !m_methodMaterialCtor) return nullptr;
+    auto& bridge = Mono::Bridge::Get();
+    MonoObject* mat = bridge.CreateObject(m_klassMaterial);
+    if (!mat) return nullptr;
+    void* args[1] = { shader };
+    MonoObject* exc = nullptr;
+    bridge.InvokeMethod(m_methodMaterialCtor, mat, args, &exc);
+    if (exc) return nullptr;
+    SetHideFlags(mat, 61);
+    return mat;
+}
+
+void Engine::SetMaterialInt(MonoObject* material, const char* name, int value) {
+    if (!material || !name || !m_methodMaterialSetInt || !IsValidUnityObject(material)) return;
+    auto& bridge = Mono::Bridge::Get();
+    MonoString* str = bridge.CreateString(name);
+    if (!str) return;
+    int val = value;
+    void* args[2] = { str, &val };
+    MonoObject* exc = nullptr;
+    bridge.InvokeMethod(m_methodMaterialSetInt, material, args, &exc);
+}
+
+void Engine::SetMaterialColor(MonoObject* material, const char* name, const Color& color) {
+    if (!material || !name || !m_methodMaterialSetColor || !IsValidUnityObject(material)) return;
+    auto& bridge = Mono::Bridge::Get();
+    MonoString* str = bridge.CreateString(name);
+    if (!str) return;
+    Color col = color;
+    void* args[2] = { str, &col };
+    MonoObject* exc = nullptr;
+    bridge.InvokeMethod(m_methodMaterialSetColor, material, args, &exc);
+}
+
+MonoObject* Engine::GetRendererSharedMaterial(MonoObject* renderer) {
+    if (!renderer || !m_methodRendererGetSharedMaterial || !IsValidUnityObject(renderer)) return nullptr;
+    MonoObject* exc = nullptr;
+    return Mono::Bridge::Get().InvokeMethod(m_methodRendererGetSharedMaterial, renderer, nullptr, &exc);
+}
+
+void Engine::SetRendererSharedMaterial(MonoObject* renderer, MonoObject* material) {
+    if (!renderer || !material || !m_methodRendererSetSharedMaterial || !IsValidUnityObject(renderer)) return;
+    void* args[1] = { material };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodRendererSetSharedMaterial, renderer, args, &exc);
+}
+
+MonoObject* Engine::GetRendererSharedMaterials(MonoObject* renderer) {
+    if (!renderer || !m_methodRendererGetSharedMaterials || !IsValidUnityObject(renderer)) return nullptr;
+    MonoObject* exc = nullptr;
+    return Mono::Bridge::Get().InvokeMethod(m_methodRendererGetSharedMaterials, renderer, nullptr, &exc);
+}
+
+void Engine::SetRendererSharedMaterials(MonoObject* renderer, MonoObject* materialsArray) {
+    if (!renderer || !materialsArray || !m_methodRendererSetSharedMaterials || !IsValidUnityObject(renderer)) return;
+    void* args[1] = { materialsArray };
+    MonoObject* exc = nullptr;
+    Mono::Bridge::Get().InvokeMethod(m_methodRendererSetSharedMaterials, renderer, args, &exc);
+}
+
+bool Engine::GetRenderers(MonoObject* parent, std::vector<MonoObject*>& outRenderers) {
+    outRenderers.clear();
+    if (!parent || !IsValidUnityObject(parent) || !m_klassMeshRenderer || !m_methodGetComponentsInternal) return false;
+    auto& bridge = Mono::Bridge::Get();
+    for (auto* rendererClass : { m_klassMeshRenderer, m_klassSkinnedMeshRenderer }) {
+        if (!rendererClass) continue;
+        MonoObject* type = bridge.GetReflectionType(rendererClass);
+        Mono::PinnedObject typePin(type);
+        if (!typePin) continue;
+        int typedArray = 1, recursive = 1, inactive = 0, reverse = 0;
+        void* args[] = { type, &typedArray, &recursive, &inactive, &reverse, nullptr };
+        MonoObject* exception = nullptr;
+        MonoObject* result = bridge.InvokeMethod(m_methodGetComponentsInternal, parent, args, &exception);
+        if (!result || exception) continue;
+        Mono::PinnedObject arrayPin(result);
+        if (!arrayPin) continue;
+        uintptr_t length = 0;
+        uintptr_t array = reinterpret_cast<uintptr_t>(result);
+        if (!Memory::ReadPtr(array + sizeof(void*) * 3, length) || length > 128) continue;
+        for (uintptr_t i = 0; i < length; ++i) {
+            uintptr_t reference = 0;
+            if (!Memory::ReadPtr(array + sizeof(void*) * 4 + i * sizeof(void*), reference)) continue;
+            auto* renderer = reinterpret_cast<MonoObject*>(reference);
+            if (!IsValidUnityObject(renderer)) continue;
+            outRenderers.push_back(renderer);
+        }
+    }
+    return !outRenderers.empty();
 }
 
 Vector3 Engine::GetComponentPosition(MonoObject* componentObj) {
@@ -526,6 +739,9 @@ std::string Engine::GetObjectName(MonoObject* obj) {
     if (s.length() > 8 && s.compare(s.length() - 8, 8, "Valuable") == 0) {
         s.erase(s.length() - 8);
     }
+
+    while (!s.empty() && (s.front() == ' ' || s.front() == '_')) s.erase(s.begin());
+    while (!s.empty() && (s.back() == ' ' || s.back() == '_')) s.pop_back();
 
     return s;
 }
@@ -577,6 +793,16 @@ MonoObject* Engine::FindActiveCamera(const char** outSourceName) {
 
     if (outSourceName) *outSourceName = "None";
     return nullptr;
+}
+
+Vector3 Engine::GetCameraPosition(MonoObject* camera) {
+    if (camera && IsValidUnityObject(camera)) {
+        Vector3 p = GetComponentPosition(camera);
+        if (p.IsValid() && !p.IsZero()) {
+            return p;
+        }
+    }
+    return GetPlayerOrCameraPosition(camera);
 }
 
 Vector3 Engine::GetPlayerOrCameraPosition(MonoObject* camera) {

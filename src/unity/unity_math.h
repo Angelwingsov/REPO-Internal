@@ -94,4 +94,66 @@ struct Color {
     }
 };
 
+
+struct Quaternion {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 1.0f;
+
+    Quaternion() = default;
+    Quaternion(float _x, float _y, float _z, float _w) : x(_x), y(_y), z(_z), w(_w) {}
+
+    bool IsValid() const {
+        return !std::isnan(x) && !std::isnan(y) && !std::isnan(z) && !std::isnan(w) &&
+               !std::isinf(x) && !std::isinf(y) && !std::isinf(z) && !std::isinf(w);
+    }
+
+    static Quaternion Identity() {
+        return Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    static Quaternion Euler(float pitch, float yaw, float roll) {
+        float deg2rad = 0.0174532925f * 0.5f;
+        float ex = pitch * deg2rad;
+        float ey = yaw * deg2rad;
+        float ez = roll * deg2rad;
+        float cX = std::cos(ex), sX = std::sin(ex);
+        float cY = std::cos(ey), sY = std::sin(ey);
+        float cZ = std::cos(ez), sZ = std::sin(ez);
+        return Quaternion(
+            sX * cY * cZ + cX * sY * sZ,
+            cX * sY * cZ - sX * cY * sZ,
+            cX * cY * sZ - sX * sY * cZ,
+            cX * cY * cZ + sX * sY * sZ
+        );
+    }
+
+    Vector3 ToEuler() const {
+        constexpr float rad2deg = 57.295779513f;
+        float sp = 2.0f * (w * x - y * z);
+        float pitch = 0.0f;
+        float yaw = 0.0f;
+        float roll = 0.0f;
+
+        if (std::abs(sp) > 0.9999f) {
+            pitch = std::copysign(90.0f, sp);
+            yaw = -2.0f * std::atan2(y, w) * rad2deg;
+            roll = 0.0f;
+        } else {
+            pitch = std::asin(sp) * rad2deg;
+            yaw = std::atan2(2.0f * (w * y + x * z), 1.0f - 2.0f * (x * x + y * y)) * rad2deg;
+            roll = std::atan2(2.0f * (w * z + x * y), 1.0f - 2.0f * (x * x + z * z)) * rad2deg;
+        }
+
+        auto normalizeAngle = [](float a) {
+            while (a < 0.0f) a += 360.0f;
+            while (a >= 360.0f) a -= 360.0f;
+            return a;
+        };
+
+        return Vector3(normalizeAngle(pitch), normalizeAngle(yaw), normalizeAngle(roll));
+    }
+};
+static_assert(sizeof(Quaternion) == 16, "Unity Quaternion size must be 16 bytes");
 }

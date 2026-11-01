@@ -48,6 +48,15 @@
     <ClCompile Include="src\dllmain.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\chams.cpp">
+      <Filter>src\features</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\antiaim.cpp">
+      <Filter>src\features</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\animbreaker.cpp">
+      <Filter>src\features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\removals.cpp">
       <Filter>src\features</Filter>
     </ClCompile>
@@ -165,6 +174,15 @@
       <Filter>src\features</Filter>
     </ClInclude>
     <ClInclude Include="src\features\spectatorlist.h">
+      <Filter>src\features</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\chams.h">
+      <Filter>src\features</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\antiaim.h">
+      <Filter>src\features</Filter>
+    </ClInclude>
+    <ClInclude Include="src\features\animbreaker.h">
       <Filter>src\features</Filter>
     </ClInclude>
     <ClInclude Include="src\features\removals.h">

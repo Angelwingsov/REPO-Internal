@@ -90,6 +90,8 @@ bool Bridge::Initialize() {
     RESOLVE_EXPORT(mono_free);
     RESOLVE_EXPORT(mono_gchandle_new);
     RESOLVE_EXPORT(mono_gchandle_free);
+    RESOLVE_EXPORT(mono_object_new);
+    RESOLVE_EXPORT(mono_array_new);
     #undef RESOLVE_EXPORT
 
     if (!m_mono_get_root_domain) {
@@ -276,6 +278,32 @@ MonoString* Bridge::CreateString(const char* text) {
     if (!domain) domain = m_RootDomain;
     __try {
         return m_mono_string_new(domain, text);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+MonoObject* Bridge::CreateObject(MonoClass* klass) {
+    if (!m_mono_object_new || !klass) return nullptr;
+    if (!AttachCurrentThread()) return nullptr;
+    MonoDomain* domain = m_mono_domain_get ? m_mono_domain_get() : m_RootDomain;
+    if (!domain) domain = m_RootDomain;
+    __try {
+        return m_mono_object_new(domain, klass);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+MonoArray* Bridge::CreateArray(MonoClass* elementClass, uintptr_t length) {
+    if (!m_mono_array_new || !elementClass) return nullptr;
+    if (!AttachCurrentThread()) return nullptr;
+    MonoDomain* domain = m_mono_domain_get ? m_mono_domain_get() : m_RootDomain;
+    if (!domain) domain = m_RootDomain;
+    __try {
+        return m_mono_array_new(domain, elementClass, length);
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;

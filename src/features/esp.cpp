@@ -101,7 +101,7 @@ ESP::Frame ESP::Collect(float screenWidth, float screenHeight) {
     config.diagnostics.cameraValid = false;
     config.diagnostics.cameraSource = "None";
     config.diagnostics.mapLoading = Game::GameState::Get().IsMapLoadingOrRestarting();
-    if (config.diagnostics.mapLoading || screenWidth < 50.0f || screenHeight < 50.0f) return frame;
+    if (config.diagnostics.mapLoading || screenWidth < 50.0f || screenHeight < 50.0f) { Game::EntityManager::Get().ClearCache(); return frame; }
     auto& engine = Unity::Engine::Get();
     const char* source = "None";
     MonoObject* camera = engine.FindActiveCamera(&source);
@@ -110,11 +110,14 @@ ESP::Frame ESP::Collect(float screenWidth, float screenHeight) {
     if (!camera) return frame;
     engine.UpdateFrameCameraMetrics(camera, screenWidth, screenHeight);
     auto position = engine.GetPlayerOrCameraPosition(camera);
+    MonoObject* camTransform = engine.GetTransform(camera);
+    Unity::Vector3 camForward = camTransform ? engine.GetTransformForward(camTransform) : Unity::Vector3{};
+
     auto& entities = Game::EntityManager::Get();
     if (config.monster.enabled) entities.CollectMonsters(camera, position, screenWidth, screenHeight, config.monster.maxDistance, frame.monsters);
     if (config.player.enabled) entities.CollectPlayers(camera, position, screenWidth, screenHeight, config.player.maxDistance, config.player.hideLocalPlayer, frame.players);
-    if (config.valuable.enabled) entities.CollectValuables(camera, position, screenWidth, screenHeight, config.valuable.maxDistance, config.valuable.hideExtracted, config.valuable.minDollarValue, frame.valuables);
-    if (config.item.enabled) entities.CollectItems(camera, position, screenWidth, screenHeight, config.item.maxDistance, frame.items);
+    if (config.valuable.enabled) entities.CollectValuables(camera, position, screenWidth, screenHeight, config.valuable.maxDistance, config.valuable.hideExtracted, config.valuable.minDollarValue, frame.valuables, camForward);
+    if (config.item.enabled) entities.CollectItems(camera, position, screenWidth, screenHeight, config.item.maxDistance, frame.items, camForward);
     config.diagnostics.monstersFound = static_cast<int>(frame.monsters.size());
     config.diagnostics.playersFound = static_cast<int>(frame.players.size());
     config.diagnostics.valuablesFound = static_cast<int>(frame.valuables.size());
@@ -278,6 +281,10 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
         ImU32 valColor = ImGui::ColorConvertFloat4ToU32(*reinterpret_cast<ImVec4*>(config.valuable.color));
 
         for (const auto& item : valuables) {
+            if (item.screenPosition.x < -150.0f || item.screenPosition.x > screenWidth + 150.0f ||
+                item.screenPosition.y < -50.0f || item.screenPosition.y > screenHeight + 50.0f) {
+                continue;
+            }
             char buf[128];
             if (config.valuable.showName && config.valuable.showValue && config.valuable.showDistance) {
                 snprintf(buf, sizeof(buf), "%s $%.0f [%.0fm]", item.name.c_str(), item.dollarValue, item.distance);
@@ -310,6 +317,10 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
         ImU32 itemColor = ImGui::ColorConvertFloat4ToU32(*reinterpret_cast<ImVec4*>(config.item.color));
 
         for (const auto& item : items) {
+            if (item.screenPosition.x < -150.0f || item.screenPosition.x > screenWidth + 150.0f ||
+                item.screenPosition.y < -50.0f || item.screenPosition.y > screenHeight + 50.0f) {
+                continue;
+            }
             char buf[128];
             if (item.value > 0 && config.item.showValue && config.item.showDistance) {
                 snprintf(buf, sizeof(buf), "%s ($%d) [%.0fm]", item.name.c_str(), item.value, item.distance);

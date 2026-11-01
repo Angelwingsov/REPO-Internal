@@ -235,10 +235,21 @@ void EntityManager::CollectPlayers(MonoObject* camera, const Unity::Vector3& ref
     }
 }
 
-void EntityManager::CollectValuables(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, bool hideExtracted, float minDollar, std::vector<ValuableEntity>& out) {
+void EntityManager::ClearCache() {
+    m_ValuableNameCache.clear();
+    m_ValuableTransformCache.clear();
+    m_ItemNameCache.clear();
+    m_ItemTransformCache.clear();
+}
+
+void EntityManager::CollectValuables(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, bool hideExtracted, float minDollar, std::vector<ValuableEntity>& out, const Unity::Vector3& camForward) {
     out.clear();
     auto& gameState = GameState::Get();
     if (!gameState.klassValuableDirector || !camera) return;
+
+    if (m_ValuableNameCache.size() > 2000) {
+        ClearCache();
+    }
 
     uintptr_t valuableDirector = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassValuableDirector, "instance"));
     if (!valuableDirector || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(valuableDirector))) {
@@ -250,14 +261,17 @@ void EntityManager::CollectValuables(MonoObject* camera, const Unity::Vector3& r
         return;
     }
 
-    std::vector<uintptr_t> valuables;
-    if (!Memory::ReadMonoList(valList, valuables)) {
+    if (!Memory::ReadMonoList(valList, m_ValuableAddressBuffer)) {
         return;
     }
 
+    out.reserve(m_ValuableAddressBuffer.size());
     auto& engine = Unity::Engine::Get();
 
-    for (uintptr_t valuable : valuables) {
+    const bool hasCamForward = camForward.IsValid() && !camForward.IsZero();
+    const float maxDistSq = maxDist * maxDist;
+
+    for (uintptr_t valuable : m_ValuableAddressBuffer) {
         if (!valuable || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(valuable))) {
             continue;
         }
@@ -276,32 +290,93 @@ void EntityManager::CollectValuables(MonoObject* camera, const Unity::Vector3& r
 
         if (dollarValue < minDollar) continue;
 
-        Unity::Vector3 worldPos = engine.GetComponentPosition(reinterpret_cast<MonoObject*>(valuable));
-        if (!worldPos.IsValid() || worldPos.IsZero()) continue;
+        // 1. Direct fast memory read from PhysGrabObject.midPoint (exact world position, 0 Mono invocations)
+        Unity::Vector3 worldPos{};
+        bool gotPos = false;
 
-        float dist = refPos.Distance(worldPos);
-        if (dist > maxDist || dist < 0.1f) continue;
+        if (gameState.offsets.ValuableObject_physGrabObject > 0 && gameState.offsets.PhysGrabObject_midPoint > 0) {
+            uintptr_t pgo = 0;
+            if (Memory::ReadPtr(valuable + gameState.offsets.ValuableObject_physGrabObject, pgo) && pgo &&
+                Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(pgo))) {
+                Unity::Vector3 midPoint{};
+                if (Memory::Read<Unity::Vector3>(pgo + gameState.offsets.PhysGrabObject_midPoint, midPoint) &&
+                    midPoint.IsValid() && !midPoint.IsZero()) {
+                    worldPos = midPoint;
+                    gotPos = true;
+                }
+            }
+        }
 
+        // 2. Fallback to cached Transform (avoids repeated get_transform invocations)
+        if (!gotPos) {
+            MonoObject* transform = nullptr;
+            auto itTransform = m_ValuableTransformCache.find(valuable);
+            if (itTransform != m_ValuableTransformCache.end() && Unity::Engine::IsValidUnityObject(itTransform->second)) {
+                transform = itTransform->second;
+            } else {
+                transform = engine.GetTransform(reinterpret_cast<MonoObject*>(valuable));
+                if (transform) {
+                    m_ValuableTransformCache[valuable] = transform;
+                }
+            }
+
+            if (transform) {
+                worldPos = engine.GetTransformPosition(transform);
+                if (worldPos.IsValid() && !worldPos.IsZero()) {
+                    gotPos = true;
+                }
+            }
+        }
+
+        if (!gotPos) continue;
+
+        // 3. Fast distance squared check before square root
+        Unity::Vector3 toItem = worldPos - refPos;
+        float distSq = toItem.LengthSq();
+        if (distSq > maxDistSq || distSq < 0.01f) continue;
+        float dist = std::sqrt(distSq);
+
+        // 4. Frustum / camera-forward culling (culls items behind the camera plane, saving WorldToScreen)
+        if (hasCamForward) {
+            float dot = camForward.Dot(toItem / dist);
+            if (dot < -0.1f) {
+                continue;
+            }
+        }
+
+        // 5. WorldToScreen projection
         Unity::Vector3 screenPos;
         if (!engine.WorldToScreen(camera, worldPos, screenPos, screenW, screenH)) continue;
 
+        // 6. Name resolution via cache (avoids Mono string allocation & reflection every frame)
         ValuableEntity entity;
         entity.address = valuable;
         entity.worldPosition = worldPos;
         entity.screenPosition = screenPos;
         entity.distance = dist;
         entity.dollarValue = dollarValue;
-        entity.name = engine.GetObjectName(reinterpret_cast<MonoObject*>(valuable));
-        if (entity.name.empty()) entity.name = "Valuable";
 
-        out.push_back(entity);
+        auto itName = m_ValuableNameCache.find(valuable);
+        if (itName != m_ValuableNameCache.end()) {
+            entity.name = itName->second;
+        } else {
+            entity.name = engine.GetObjectName(reinterpret_cast<MonoObject*>(valuable));
+            if (entity.name.empty()) entity.name = "Valuable";
+            m_ValuableNameCache[valuable] = entity.name;
+        }
+
+        out.push_back(std::move(entity));
     }
 }
 
-void EntityManager::CollectItems(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, std::vector<ItemEntity>& out) {
+void EntityManager::CollectItems(MonoObject* camera, const Unity::Vector3& refPos, float screenW, float screenH, float maxDist, std::vector<ItemEntity>& out, const Unity::Vector3& camForward) {
     out.clear();
     auto& gameState = GameState::Get();
     if (!gameState.klassItemManager || !camera) return;
+
+    if (m_ItemNameCache.size() > 2000) {
+        ClearCache();
+    }
 
     uintptr_t itemMgr = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassItemManager, "instance"));
     if (!itemMgr || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(itemMgr))) {
@@ -313,24 +388,76 @@ void EntityManager::CollectItems(MonoObject* camera, const Unity::Vector3& refPo
         return;
     }
 
-    std::vector<uintptr_t> items;
-    if (!Memory::ReadMonoList(spawnedItemsList, items)) {
+    if (!Memory::ReadMonoList(spawnedItemsList, m_ItemAddressBuffer)) {
         return;
     }
 
+    out.reserve(m_ItemAddressBuffer.size());
     auto& engine = Unity::Engine::Get();
 
-    for (uintptr_t itemAttr : items) {
+    const bool hasCamForward = camForward.IsValid() && !camForward.IsZero();
+    const float maxDistSq = maxDist * maxDist;
+
+    for (uintptr_t itemAttr : m_ItemAddressBuffer) {
         if (!itemAttr || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(itemAttr))) {
             continue;
         }
 
-        Unity::Vector3 worldPos = engine.GetComponentPosition(reinterpret_cast<MonoObject*>(itemAttr));
-        if (!worldPos.IsValid() || worldPos.IsZero()) continue;
+        // 1. Direct fast memory read from PhysGrabObject.midPoint
+        Unity::Vector3 worldPos{};
+        bool gotPos = false;
 
-        float dist = refPos.Distance(worldPos);
-        if (dist > maxDist || dist < 0.1f) continue;
+        if (gameState.offsets.ItemAttributes_physGrabObject > 0 && gameState.offsets.PhysGrabObject_midPoint > 0) {
+            uintptr_t pgo = 0;
+            if (Memory::ReadPtr(itemAttr + gameState.offsets.ItemAttributes_physGrabObject, pgo) && pgo &&
+                Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(pgo))) {
+                Unity::Vector3 midPoint{};
+                if (Memory::Read<Unity::Vector3>(pgo + gameState.offsets.PhysGrabObject_midPoint, midPoint) &&
+                    midPoint.IsValid() && !midPoint.IsZero()) {
+                    worldPos = midPoint;
+                    gotPos = true;
+                }
+            }
+        }
 
+        // 2. Fallback to cached Transform
+        if (!gotPos) {
+            MonoObject* transform = nullptr;
+            auto itTransform = m_ItemTransformCache.find(itemAttr);
+            if (itTransform != m_ItemTransformCache.end() && Unity::Engine::IsValidUnityObject(itTransform->second)) {
+                transform = itTransform->second;
+            } else {
+                transform = engine.GetTransform(reinterpret_cast<MonoObject*>(itemAttr));
+                if (transform) {
+                    m_ItemTransformCache[itemAttr] = transform;
+                }
+            }
+
+            if (transform) {
+                worldPos = engine.GetTransformPosition(transform);
+                if (worldPos.IsValid() && !worldPos.IsZero()) {
+                    gotPos = true;
+                }
+            }
+        }
+
+        if (!gotPos) continue;
+
+        // 3. Fast distance squared check before square root
+        Unity::Vector3 toItem = worldPos - refPos;
+        float distSq = toItem.LengthSq();
+        if (distSq > maxDistSq || distSq < 0.01f) continue;
+        float dist = std::sqrt(distSq);
+
+        // 4. Frustum / camera-forward culling
+        if (hasCamForward) {
+            float dot = camForward.Dot(toItem / dist);
+            if (dot < -0.1f) {
+                continue;
+            }
+        }
+
+        // 5. WorldToScreen projection
         Unity::Vector3 screenPos;
         if (!engine.WorldToScreen(camera, worldPos, screenPos, screenW, screenH)) continue;
 
@@ -340,18 +467,25 @@ void EntityManager::CollectItems(MonoObject* camera, const Unity::Vector3& refPo
         entity.screenPosition = screenPos;
         entity.distance = dist;
 
-        uintptr_t mName = 0;
-        Memory::ReadPtr(itemAttr + gameState.offsets.ItemAttributes_itemName, mName);
-        if (mName) entity.name = Mono::Bridge::Get().ReadMonoString(reinterpret_cast<MonoString*>(mName));
-        if (entity.name.empty()) {
-            Memory::ReadPtr(itemAttr + gameState.offsets.ItemAttributes_instanceName, mName);
+        // 6. Name resolution via cache
+        auto itName = m_ItemNameCache.find(itemAttr);
+        if (itName != m_ItemNameCache.end()) {
+            entity.name = itName->second;
+        } else {
+            uintptr_t mName = 0;
+            Memory::ReadPtr(itemAttr + gameState.offsets.ItemAttributes_itemName, mName);
             if (mName) entity.name = Mono::Bridge::Get().ReadMonoString(reinterpret_cast<MonoString*>(mName));
+            if (entity.name.empty()) {
+                Memory::ReadPtr(itemAttr + gameState.offsets.ItemAttributes_instanceName, mName);
+                if (mName) entity.name = Mono::Bridge::Get().ReadMonoString(reinterpret_cast<MonoString*>(mName));
+            }
+            if (entity.name.empty()) entity.name = "Item";
+            m_ItemNameCache[itemAttr] = entity.name;
         }
-        if (entity.name.empty()) entity.name = "Item";
 
         Memory::ReadInt(itemAttr + gameState.offsets.ItemAttributes_value, entity.value);
 
-        out.push_back(entity);
+        out.push_back(std::move(entity));
     }
 }
 

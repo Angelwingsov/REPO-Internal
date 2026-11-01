@@ -25,6 +25,7 @@ Config Config::Copy() {
 void Config::ResetToDefaults() {
     monster = MonsterConfig();
     player = PlayerESPConfig();
+    chams = ChamsConfig();
     valuable = ValuableConfig();
     item = ItemConfig();
     movement = MovementConfig();
