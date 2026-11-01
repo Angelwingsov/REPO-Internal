@@ -245,6 +245,7 @@ void Menu::Render() {
         ui::BeginChild("Movement utilities",{Vec2(6,0),Vec2(3,5)});
         ui::Checkbox("Extend grab range",&cfg.movement.extendGrabRange);
         ui::SliderFloat("Grab range",&cfg.movement.grabRange,4,30,"%.0f m",1);
+        ui::Checkbox("Grab through walls",&cfg.movement.grabThroughWalls);
         ui::Checkbox("Super jump",&cfg.movement.superJump);
         ui::SliderFloat("Jump multiplier",&cfg.movement.jumpMultiplier,1,4,"%.1fx",.1f);
         ui::Checkbox("No ragdoll",&cfg.movement.noTumble);
