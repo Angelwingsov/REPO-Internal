@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
+#include <atomic>
 
 namespace Hook {
 
@@ -18,9 +19,17 @@ public:
 
     static void CreateRenderTarget(IDXGISwapChain* pSwapChain);
     static void CleanupRenderTarget();
+    static void RenderOverlay(IDXGISwapChain* swapChain);
+    static void CleanupOverlay();
+    static void GuardedRender(IDXGISwapChain* swapChain);
+    static void InitializeGame();
+    static DWORD WINAPI ShutdownThread(LPVOID);
 
     static inline bool s_Hooked = false;
     static inline bool s_ImGuiInitialized = false;
+    static inline std::atomic<bool> s_Unloading{false}, s_RenderCleanupRequested{false};
+    static inline std::atomic<bool> s_OverlayStopped{false}, s_RenderCleanupDone{false};
+    static inline std::atomic<bool> s_GameReady{false}, s_GameInitAttempted{false};
     static inline HMODULE s_ModuleHandle = nullptr;
 
     static inline Present_t s_OriginalPresent = nullptr;
@@ -30,6 +39,7 @@ public:
     static inline ID3D11DeviceContext* s_Context = nullptr;
     static inline ID3D11RenderTargetView* s_RenderTargetView = nullptr;
     static inline HWND s_Window = nullptr;
+    static inline std::atomic<IDXGISwapChain*> s_SwapChain{nullptr};
 };
 
 }

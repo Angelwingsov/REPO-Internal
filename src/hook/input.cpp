@@ -2,6 +2,7 @@
 #include "core/config.h"
 #include "core/logger.h"
 #include "imgui/imgui.h"
+#include "core/hook_activity.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -64,7 +65,9 @@ bool InputHook::IsKeyHeld(int vkCode) {
 }
 
 LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    auto& cfg = Core::Config::Get();
+    Core::HookActivity activity;
+    std::unique_lock<std::recursive_mutex> lock(Core::Config::Mutex());
+    auto& cfg = Core::Config::Global();
 
     if (uMsg == WM_MOUSEWHEEL) {
         short delta = GET_WHEEL_DELTA_WPARAM(wParam);
@@ -79,7 +82,7 @@ LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, 
 
     bool toggleMenu = false;
 
-    if (uMsg == WM_KEYDOWN) {
+    if (uMsg == WM_KEYDOWN && !(lParam & (1LL << 30))) {
         if (wParam == cfg.menu.toggleKey || wParam == VK_DELETE || wParam == VK_INSERT) {
             toggleMenu = true;
         }
@@ -127,7 +130,7 @@ LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, 
     }
 
     if (cfg.menu.isVisible) {
-        if (ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam)) {
+        if (ImGui::GetCurrentContext() && ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam)) {
             return true;
         }
 
@@ -152,8 +155,10 @@ LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, 
         }
     }
 
-    if (s_OriginalWndProc) {
-        return CallWindowProc(s_OriginalWndProc, hWnd, uMsg, wParam, lParam);
+    WNDPROC original = s_OriginalWndProc;
+    lock.unlock();
+    if (original) {
+        return CallWindowProc(original, hWnd, uMsg, wParam, lParam);
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }

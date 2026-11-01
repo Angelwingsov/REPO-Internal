@@ -161,7 +161,7 @@ void ThirdPerson::Update() {
             &exc
         );
 
-        if (avatarVisuals && gameState.methodShowSelfOverride) {
+        if (avatarVisuals && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatarVisuals)) && gameState.methodShowSelfOverride) {
             void* visParams[1];
             float visTime = 0.25f;
             visParams[0] = &visTime;
@@ -190,7 +190,7 @@ void ThirdPerson::Update() {
                 &exc
             );
 
-            if (avatarVisuals && gameState.methodShowSelfOverride) {
+            if (avatarVisuals && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(avatarVisuals)) && gameState.methodShowSelfOverride) {
                 float zeroTime = 0.0f;
                 void* visParams[1];
                 visParams[0] = &zeroTime;

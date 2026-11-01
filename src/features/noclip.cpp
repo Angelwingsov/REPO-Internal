@@ -6,7 +6,6 @@
 #include "unity/unity_engine.h"
 #include "mono/mono_bridge.h"
 #include "hook/input.h"
-#include "imgui/imgui.h"
 #include <algorithm>
 
 namespace Features {
@@ -36,7 +35,7 @@ void NoClip::RestorePhysics() {
     m_LastPlayerAvatar = 0;
 }
 
-void NoClip::Update() {
+void NoClip::Update(float deltaTime) {
     auto& gameState = Game::GameState::Get();
     if (!gameState.IsReady() || gameState.IsMapLoadingOrRestarting()) {
         if (m_WasActive) {
@@ -184,8 +183,7 @@ void NoClip::Update() {
         speed *= cfg.noclip.sprintMultiplier;
     }
 
-    ImGuiIO& io = ImGui::GetIO();
-    float dt = io.DeltaTime;
+    float dt = deltaTime;
     if (dt <= 0.0f || dt > 0.1f) dt = 0.016f;
 
     if (isMoving && moveDir.LengthSq() > 0.0001f) {

@@ -189,6 +189,7 @@
       <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)src;$(ProjectDir)imgui;$(ProjectDir)minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <Optimization>MaxSpeed</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
@@ -196,7 +197,7 @@
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <AdditionalDependencies>d3d11.lib;dxgi.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
@@ -218,6 +219,7 @@
     <ClCompile Include="src\features\removals.cpp" />
     <ClCompile Include="src\game\entities.cpp" />
     <ClCompile Include="src\game\state.cpp" />
+    <ClCompile Include="src\game\runtime.cpp" />
     <ClCompile Include="src\hook\dx11hook.cpp" />
     <ClCompile Include="src\hook\input.cpp" />
     <ClCompile Include="src\memory\memory.cpp" />
@@ -252,6 +254,9 @@
     <ClInclude Include="src\features\removals.h" />
     <ClInclude Include="src\game\entities.h" />
     <ClInclude Include="src\game\state.h" />
+    <ClInclude Include="src\game\runtime.h" />
+    <ClInclude Include="src\core\snapshot.h" />
+    <ClInclude Include="src\core\hook_activity.h" />
     <ClInclude Include="src\hook\dx11hook.h" />
     <ClInclude Include="src\hook\input.h" />
     <ClInclude Include="src\memory\memory.h" />

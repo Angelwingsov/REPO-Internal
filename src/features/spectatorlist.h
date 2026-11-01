@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "unity/unity_math.h"
+#include "core/snapshot.h"
 
 namespace Features {
 
@@ -21,13 +22,14 @@ public:
     void Update();
     void Render();
 
-    const std::vector<SpectatorEntry>& GetSpectators() const { return m_Spectators; }
-    size_t GetCount() const { return m_Spectators.size(); }
+    std::vector<SpectatorEntry> GetSpectators() const { return m_Snapshot.Read(); }
+    size_t GetCount() const { return m_Snapshot.Read().size(); }
 
 private:
     SpectatorList() = default;
 
-    std::vector<SpectatorEntry> m_Spectators;
+    void Collect(std::vector<SpectatorEntry>& m_Spectators);
+    Core::Snapshot<std::vector<SpectatorEntry>> m_Snapshot;
 };
 
 }

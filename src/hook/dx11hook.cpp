@@ -5,6 +5,8 @@
 #include "mono/mono_bridge.h"
 #include "unity/unity_engine.h"
 #include "game/state.h"
+#include "game/runtime.h"
+#include "core/hook_activity.h"
 #include "features/esp.h"
 #include "features/godmode.h"
 #include "features/noclip.h"
@@ -40,33 +42,74 @@ void DX11Hook::CleanupRenderTarget() {
 }
 
 HRESULT __stdcall DX11Hook::ResizeBuffersHook(IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags) {
+    Core::HookActivity activity;
+    if (s_SwapChain.load() != pSwapChain)
+        return s_OriginalResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
     LOG_INFO("ResizeBuffers invoked: %ux%u", Width, Height);
 
-    if (s_Context) {
-        s_Context->OMSetRenderTargets(0, nullptr, nullptr);
+    {
+        std::lock_guard<std::recursive_mutex> lock(Core::Config::Mutex());
+        if (s_Context) s_Context->OMSetRenderTargets(0, nullptr, nullptr);
+        CleanupRenderTarget();
     }
-    CleanupRenderTarget();
 
     HRESULT hr = s_OriginalResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
-    CreateRenderTarget(pSwapChain);
+    {
+        std::lock_guard<std::recursive_mutex> lock(Core::Config::Mutex());
+        if (SUCCEEDED(hr) && !s_OverlayStopped) CreateRenderTarget(pSwapChain);
+    }
     return hr;
 }
 
-HRESULT __stdcall DX11Hook::PresentHook(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags) {
+HRESULT __stdcall DX11Hook::PresentHook(IDXGISwapChain* swapChain, UINT interval, UINT flags) {
+    Core::HookActivity activity;
+    IDXGISwapChain* owner = s_SwapChain.load();
+    if (owner && owner != swapChain) return s_OriginalPresent(swapChain, interval, flags);
+    if (!s_OverlayStopped && !s_Unloading) InitializeGame();
+    if (!s_OverlayStopped || (s_RenderCleanupRequested && !s_RenderCleanupDone)) {
+        std::lock_guard<std::recursive_mutex> lock(Core::Config::Mutex());
+        if (s_RenderCleanupRequested) CleanupOverlay();
+        else GuardedRender(swapChain);
+    }
+    return s_OriginalPresent(swapChain, interval, flags);
+}
+
+void DX11Hook::InitializeGame() {
+    if (s_GameInitAttempted) return;
+    if (!Mono::Bridge::Get().Initialize()) return;
+    if (s_GameInitAttempted.exchange(true)) return;
+    s_GameReady = Unity::Engine::Get().Initialize() && Game::GameState::Get().Initialize();
+    if (s_GameReady) LOG_OK("Game-thread runtime initialized");
+    else LOG_ERR("Game initialization failed; features disabled until DLL reload");
+}
+
+void DX11Hook::GuardedRender(IDXGISwapChain* swapChain) {
+    __try { RenderOverlay(swapChain); }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERR("Overlay disabled after native exception 0x%08X", GetExceptionCode());
+        s_OverlayStopped = true;
+    }
+}
+
+void DX11Hook::RenderOverlay(IDXGISwapChain* pSwapChain) {
     if (!s_ImGuiInitialized) {
         LOG_INFO("First Present hook trigger. Resolving DX11 device & context...");
+        DXGI_SWAP_CHAIN_DESC sd{};
+        if (FAILED(pSwapChain->GetDesc(&sd)) || !IsWindow(sd.OutputWindow)) return;
 
         if (SUCCEEDED(pSwapChain->GetDevice(__uuidof(ID3D11Device), reinterpret_cast<void**>(&s_Device)))) {
             s_Device->GetImmediateContext(&s_Context);
 
-            DXGI_SWAP_CHAIN_DESC sd;
-            pSwapChain->GetDesc(&sd);
             s_Window = sd.OutputWindow;
 
             LOG_OK("DX11 Device: %p, Context: %p, Window: %p", s_Device, s_Context, s_Window);
 
             CreateRenderTarget(pSwapChain);
-            InputHook::Initialize(s_Window);
+            if (!s_RenderTargetView) {
+                s_Context->Release(); s_Context = nullptr;
+                s_Device->Release(); s_Device = nullptr;
+                return;
+            }
 
             ImGui::CreateContext();
             ImGuiIO& io = ImGui::GetIO();
@@ -77,26 +120,28 @@ HRESULT __stdcall DX11Hook::PresentHook(IDXGISwapChain* pSwapChain, UINT SyncInt
             style.WindowRounding = 6.0f;
             style.FrameRounding = 4.0f;
 
-            ImGui_ImplWin32_Init(s_Window);
-            ImGui_ImplDX11_Init(s_Device, s_Context);
+            if (!ImGui_ImplWin32_Init(s_Window) || !ImGui_ImplDX11_Init(s_Device, s_Context) || !InputHook::Initialize(s_Window)) {
+                LOG_ERR("Overlay backend initialization failed");
+                if (ImGui::GetIO().BackendRendererUserData) ImGui_ImplDX11_Shutdown();
+                if (ImGui::GetIO().BackendPlatformUserData) ImGui_ImplWin32_Shutdown();
+                ImGui::DestroyContext();
+                CleanupRenderTarget();
+                s_Context->Release(); s_Context = nullptr;
+                s_Device->Release(); s_Device = nullptr;
+                s_OverlayStopped = true;
+                return;
+            }
 
+            s_SwapChain = pSwapChain;
             s_ImGuiInitialized = true;
             LOG_OK("Dear ImGui DX11 overlay initialized successfully!");
         } else {
             LOG_ERR("Failed to get DX11 Device from SwapChain!");
-            return s_OriginalPresent(pSwapChain, SyncInterval, Flags);
+            return;
         }
     }
 
-    static bool s_SubsystemsInitialized = false;
-    if (!s_SubsystemsInitialized) {
-        if (Mono::Bridge::Get().Initialize()) {
-            Unity::Engine::Get().Initialize();
-            Game::GameState::Get().Initialize();
-            s_SubsystemsInitialized = true;
-            LOG_OK("All game introspection subsystems connected!");
-        }
-    }
+    bool s_SubsystemsInitialized = s_GameReady.load();
 
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -107,37 +152,16 @@ HRESULT __stdcall DX11Hook::PresentHook(IDXGISwapChain* pSwapChain, UINT SyncInt
 
     io.MouseDrawCursor = cfg.menu.isVisible;
 
+    Game::Runtime::Get().SetViewport(io.DisplaySize.x, io.DisplaySize.y);
+    if (!s_SubsystemsInitialized && cfg.menu.isVisible) ::ClipCursor(nullptr);
     if (s_SubsystemsInitialized) {
-        Unity::Engine::Get().UpdateCursorState(cfg.menu.isVisible);
-    } else if (cfg.menu.isVisible) {
-        ::ClipCursor(nullptr);
-    }
-
-    if (s_SubsystemsInitialized) {
-        __try {
-            Features::GodMode::Get().Update();
-            Features::NoClip::Get().Update();
-            Features::PlayerMods::Get().Update();
-            Features::ThirdPerson::Get().Update();
-            Features::SpectatorList::Get().Update();
-            Features::ESP::Get().Render(ImGui::GetForegroundDrawList(), io.DisplaySize.x, io.DisplaySize.y);
-            Features::SpectatorList::Get().Render();
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            static bool s_LoggedOnce = false;
-            if (!s_LoggedOnce) {
-                LOG_ERR("Exception in Features Update/Render (Code: 0x%08X)", GetExceptionCode());
-                s_LoggedOnce = true;
-            }
-        }
+        Features::ESP::Get().Render(ImGui::GetForegroundDrawList(), io.DisplaySize.x, io.DisplaySize.y);
+        Features::SpectatorList::Get().Render();
     }
 
     UI::Menu::Get().Render();
 
     io.MouseDrawCursor = cfg.menu.isVisible;
-    if (s_SubsystemsInitialized) {
-        Unity::Engine::Get().UpdateCursorState(cfg.menu.isVisible);
-    }
 
     ImGui::Render();
     if (s_RenderTargetView && s_Context) {
@@ -147,11 +171,14 @@ HRESULT __stdcall DX11Hook::PresentHook(IDXGISwapChain* pSwapChain, UINT SyncInt
 
     if (Core::Config::Get().menu.requestUnload) {
         Core::Config::Get().menu.requestUnload = false;
-        LOG_INFO("Unload requested by user. Spawning eject thread...");
-        CreateThread(nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(Shutdown), nullptr, 0, nullptr);
+        if (!s_Unloading.exchange(true)) {
+            HANDLE worker = CreateThread(nullptr, 0, ShutdownThread, nullptr, 0, nullptr);
+            if (worker) CloseHandle(worker);
+            else s_Unloading = false;
+        }
     }
 
-    return s_OriginalPresent(pSwapChain, SyncInterval, Flags);
+    return;
 }
 
 bool DX11Hook::Initialize() {
@@ -208,67 +235,69 @@ bool DX11Hook::Initialize() {
         return false;
     }
 
-    if (MH_CreateHook(pPresent, &PresentHook, reinterpret_cast<void**>(&s_OriginalPresent)) != MH_OK) {
-        LOG_ERR("Failed to create hook for Present!");
+    if (MH_CreateHook(pPresent, &PresentHook, reinterpret_cast<void**>(&s_OriginalPresent)) != MH_OK ||
+        MH_CreateHook(pResizeBuffers, &ResizeBuffersHook, reinterpret_cast<void**>(&s_OriginalResizeBuffers)) != MH_OK) {
+        LOG_ERR("Failed to create DX11 hooks; rolling back initialization");
+        MH_Uninitialize();
         return false;
     }
-    if (MH_EnableHook(pPresent) != MH_OK) {
-        LOG_ERR("Failed to enable hook for Present!");
+    // Create both trampolines before either callback can enter game initialization.
+    if (MH_QueueEnableHook(pPresent) != MH_OK || MH_QueueEnableHook(pResizeBuffers) != MH_OK || MH_ApplyQueued() != MH_OK) {
+        LOG_ERR("Failed to enable DX11 hooks; rolling back initialization");
+        MH_DisableHook(MH_ALL_HOOKS);
+        if (Core::HookActivity::WaitForIdle()) MH_Uninitialize();
         return false;
     }
-    LOG_OK("Present hooked successfully!");
-
-    if (MH_CreateHook(pResizeBuffers, &ResizeBuffersHook, reinterpret_cast<void**>(&s_OriginalResizeBuffers)) != MH_OK) {
-        LOG_ERR("Failed to create hook for ResizeBuffers!");
-        return false;
-    }
-    if (MH_EnableHook(pResizeBuffers) != MH_OK) {
-        LOG_ERR("Failed to enable hook for ResizeBuffers!");
-        return false;
-    }
-    LOG_OK("ResizeBuffers hooked successfully!");
+    LOG_OK("Present and ResizeBuffers hooks enabled");
 
     s_Hooked = true;
     return true;
 }
 
-void DX11Hook::Shutdown() {
-    if (!s_Hooked) return;
-    if (!Features::Removals::Get().RestoreBeforeUnload()) return;
-    s_Hooked = false;
-
-    LOG_INFO("Detaching cheat hooks and restoring state...");
-
-    MH_DisableHook(MH_ALL_HOOKS);
-    MH_Uninitialize();
-    LOG_OK("MinHook uninitialized!");
-
+void DX11Hook::CleanupOverlay() {
+    // Called by Present on the render thread, serialized with WndProc.
     InputHook::Shutdown();
-
     if (s_ImGuiInitialized) {
-        ImGuiIO& io = ImGui::GetIO();
-        io.MouseDrawCursor = false;
-        Unity::Engine::Get().UpdateCursorState(false);
+        ImGui::GetIO().MouseDrawCursor = false;
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
         s_ImGuiInitialized = false;
-        LOG_OK("ImGui context destroyed!");
     }
-
     CleanupRenderTarget();
     if (s_Context) { s_Context->Release(); s_Context = nullptr; }
-    if (s_Device)  { s_Device->Release();  s_Device = nullptr;  }
+    if (s_Device) { s_Device->Release(); s_Device = nullptr; }
+    s_OverlayStopped = true;
+    s_RenderCleanupDone = true;
+}
 
-    LOG_OK("Cheat detached cleanly! Goodbye.");
+DWORD WINAPI DX11Hook::ShutdownThread(LPVOID) { Shutdown(); return 0; }
 
-    Sleep(1000);
-    HMODULE hMod = s_ModuleHandle;
-    Core::Logger::Shutdown();
-
-    if (hMod) {
-        FreeLibraryAndExitThread(hMod, 0);
+void DX11Hook::Shutdown() {
+    if (!s_Hooked) { s_Unloading = false; return; }
+    if (!Game::Runtime::Get().StopAndWait() || !Features::Removals::Get().RestoreBeforeUnload()) {
+        s_Unloading = false;
+        return;
     }
+    LOG_INFO("Stopping overlay and waiting for hook callbacks to finish...");
+    s_RenderCleanupRequested = true;
+    for (int i = 0; i < 400 && !s_RenderCleanupDone; ++i) Sleep(5);
+    if (!s_RenderCleanupDone) {
+        LOG_WARN("Render cleanup was not acknowledged; DLL remains loaded");
+        s_Unloading = false;
+        return;
+    }
+    if (MH_DisableHook(MH_ALL_HOOKS) != MH_OK || !Core::HookActivity::WaitForIdle()) {
+        LOG_WARN("Hooks are still active; keeping their code and trampolines loaded");
+        s_Unloading = false;
+        return;
+    }
+    MH_Uninitialize();
+    s_Hooked = false;
+    LOG_OK("Hooks stopped and graphics resources released");
+    HMODULE module = s_ModuleHandle;
+    Core::Logger::Shutdown();
+    if (module) FreeLibraryAndExitThread(module, 0);
 }
 
 }

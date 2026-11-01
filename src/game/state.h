@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <atomic>
 #include "mono/mono_bridge.h"
 
 namespace Game {
@@ -219,9 +220,9 @@ public:
 
 private:
     GameState() = default;
-    void ResolveOffsets();
+    bool ResolveOffsets();
 
-    bool m_Initialized = false;
+    std::atomic<bool> m_Initialized{false};
 };
 
 }

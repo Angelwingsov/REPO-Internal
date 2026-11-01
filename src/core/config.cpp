@@ -3,8 +3,23 @@
 namespace Core {
 
 Config& Config::Get() {
+    if (s_ThreadConfig) return *s_ThreadConfig;
+    return Global();
+}
+
+Config& Config::Global() {
     static Config instance;
     return instance;
+}
+
+std::recursive_mutex& Config::Mutex() {
+    static std::recursive_mutex mutex;
+    return mutex;
+}
+
+Config Config::Copy() {
+    std::lock_guard<std::recursive_mutex> lock(Mutex());
+    return Get();
 }
 
 void Config::ResetToDefaults() {

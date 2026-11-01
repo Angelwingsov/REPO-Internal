@@ -3,6 +3,8 @@
 #include "hook/dx11hook.h"
 
 DWORD WINAPI MainThread(LPVOID lpParam) {
+    Core::Logger::Initialize();
+    LOG_OK("R.E.P.O build %s %s loaded into PID: %lu", __DATE__, __TIME__, GetCurrentProcessId());
     LOG_INFO("MainThread started (Thread ID: %lu)...", GetCurrentThreadId());
     LOG_INFO("Waiting for d3d11.dll and mono runtime...");
 
@@ -30,9 +32,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         Hook::DX11Hook::s_ModuleHandle = hModule;
-
-        Core::Logger::Initialize();
-        LOG_OK("R.E.P.O Cheat injected into PID: %lu", GetCurrentProcessId());
 
         HANDLE hThread = CreateThread(nullptr, 0, MainThread, hModule, 0, nullptr);
         if (hThread) {

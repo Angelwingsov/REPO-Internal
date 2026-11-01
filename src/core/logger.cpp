@@ -3,8 +3,15 @@
 #include <cstdarg>
 #include <ctime>
 #include <share.h>
+#include <dbghelp.h>
 
 namespace Core {
+namespace {
+    HMODULE crashLibrary = nullptr;
+    decltype(&MiniDumpWriteDump) writeCrashDump = nullptr;
+    volatile LONG handlingCrash = 0;
+}
+
 
 void Logger::Initialize(const char* consoleTitle) {
     std::lock_guard<std::mutex> lock(s_LogMutex);
@@ -34,6 +41,8 @@ void Logger::Initialize(const char* consoleTitle) {
 
     // Allow diagnostics to be read while the game is running.
     s_LogFile = _fsopen("repo_cheat.log", "w", _SH_DENYNO);
+    crashLibrary = LoadLibraryA("dbghelp.dll");
+    if (crashLibrary) writeCrashDump = reinterpret_cast<decltype(writeCrashDump)>(GetProcAddress(crashLibrary, "MiniDumpWriteDump"));
     s_PrevExceptionFilter = SetUnhandledExceptionFilter(UnhandledExceptionFilter);
 
     s_Initialized = true;
@@ -48,10 +57,11 @@ void Logger::Shutdown() {
     std::lock_guard<std::mutex> lock(s_LogMutex);
     if (!s_Initialized) return;
 
-    if (s_PrevExceptionFilter) {
-        SetUnhandledExceptionFilter(s_PrevExceptionFilter);
-        s_PrevExceptionFilter = nullptr;
-    }
+    // A null previous filter still has to be restored before this DLL is unloaded.
+    SetUnhandledExceptionFilter(s_PrevExceptionFilter);
+    s_PrevExceptionFilter = nullptr;
+    writeCrashDump = nullptr;
+    if (crashLibrary) { FreeLibrary(crashLibrary); crashLibrary = nullptr; }
 
     if (s_LogFile) {
         fflush(s_LogFile);
@@ -137,105 +147,46 @@ void Logger::LogInternal(LogLevel level, const char* format, va_list args) {
     va_end(argsCopy);
 }
 
-LONG WINAPI Logger::UnhandledExceptionFilter(EXCEPTION_POINTERS* pExceptionInfo) {
-    if (!pExceptionInfo || !pExceptionInfo->ExceptionRecord) {
+LONG WINAPI Logger::UnhandledExceptionFilter(EXCEPTION_POINTERS* exception) {
+    if (!exception || !exception->ExceptionRecord || InterlockedCompareExchange(&handlingCrash, 1, 0))
         return EXCEPTION_CONTINUE_SEARCH;
-    }
-
-    std::lock_guard<std::mutex> lock(s_LogMutex);
-
-    printf("\n\n\033[91m============================================================\033[0m\n");
-    printf("\033[91m[!] CRITICAL FATAL EXCEPTION DETECTED!\033[0m\n");
-    printf("[!] Exception Code    : 0x%08lX\n", (unsigned long)pExceptionInfo->ExceptionRecord->ExceptionCode);
-    printf("[!] Exception Address : 0x%p\n", pExceptionInfo->ExceptionRecord->ExceptionAddress);
-
-    HMODULE hModule = nullptr;
+    // Never acquire the logger mutex or use its FILE streams on the faulting thread:
+    // the exception may have interrupted a log write while that mutex was held.
+    HMODULE module = nullptr;
+    char modulePath[MAX_PATH] = "Unknown / JIT memory";
+    auto* record = exception->ExceptionRecord;
+    uintptr_t rva = 0;
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           reinterpret_cast<LPCSTR>(pExceptionInfo->ExceptionRecord->ExceptionAddress), &hModule)) {
-        char modName[MAX_PATH] = { 0 };
-        GetModuleFileNameA(hModule, modName, MAX_PATH);
-        printf("[!] In Module         : %s\n", modName);
-        uintptr_t rva = reinterpret_cast<uintptr_t>(pExceptionInfo->ExceptionRecord->ExceptionAddress) - reinterpret_cast<uintptr_t>(hModule);
-        printf("[!] Module Base       : 0x%p (RVA: +0x%llX)\n", static_cast<void*>(hModule), static_cast<unsigned long long>(rva));
-    } else {
-        printf("[!] In Module         : Unknown / JIT-generated memory\n");
+        reinterpret_cast<LPCSTR>(record->ExceptionAddress), &module)) {
+        GetModuleFileNameA(module, modulePath, MAX_PATH);
+        rva = reinterpret_cast<uintptr_t>(record->ExceptionAddress) - reinterpret_cast<uintptr_t>(module);
     }
-
-    if (pExceptionInfo->ContextRecord) {
-#if defined(_M_X64) || defined(__x86_64__)
-        printf("[!] RIP: 0x%p  RAX: 0x%p  RBX: 0x%p\n",
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rip),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rax),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rbx));
-        printf("[!] RCX: 0x%p  RDX: 0x%p  RSP: 0x%p\n",
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rcx),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rdx),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rsp));
-#elif defined(_M_IX86) || defined(__i386__)
-        printf("[!] EIP: 0x%p  EAX: 0x%p  EBX: 0x%p\n",
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Eip),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Eax),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Ebx));
-        printf("[!] ECX: 0x%p  EDX: 0x%p  ESP: 0x%p\n",
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Ecx),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Edx),
-               reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Esp));
-#endif
+    char report[2048]{};
+    int length = _snprintf_s(report, sizeof(report), _TRUNCATE,
+        "Build: %s %s\r\nCode: 0x%08lX\r\nThread: %lu\r\nAddress: %p\r\nModule: %s\r\nRVA: 0x%llX\r\n",
+        __DATE__, __TIME__, record->ExceptionCode, GetCurrentThreadId(), record->ExceptionAddress,
+        modulePath, static_cast<unsigned long long>(rva));
+    HANDLE file = CreateFileA("repo_cheat_crash.log", GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        if (length > 0) WriteFile(file, report, static_cast<DWORD>(length), &written, nullptr);
+        if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2) {
+            length = _snprintf_s(report, sizeof(report), _TRUNCATE, "Operation: %llu; target: %p\r\n",
+                static_cast<unsigned long long>(record->ExceptionInformation[0]), reinterpret_cast<void*>(record->ExceptionInformation[1]));
+            if (length > 0) WriteFile(file, report, static_cast<DWORD>(length), &written, nullptr);
+        }
+        FlushFileBuffers(file);
+        CloseHandle(file);
     }
-    printf("\033[91m============================================================\033[0m\n");
-    fflush(stdout);
-
-    FILE* crashFile = nullptr;
-    fopen_s(&crashFile, "repo_cheat_crash.log", "w");
-    if (crashFile) {
-        fprintf(crashFile, "Fatal Crash Detected!\nCode: 0x%08lX\nAddress: 0x%p\n",
-                (unsigned long)pExceptionInfo->ExceptionRecord->ExceptionCode,
-                pExceptionInfo->ExceptionRecord->ExceptionAddress);
-        if (hModule) {
-            char modName[MAX_PATH] = { 0 };
-            GetModuleFileNameA(hModule, modName, MAX_PATH);
-            uintptr_t rva = reinterpret_cast<uintptr_t>(pExceptionInfo->ExceptionRecord->ExceptionAddress) - reinterpret_cast<uintptr_t>(hModule);
-            fprintf(crashFile, "Module: %s (+0x%llX)\n", modName, static_cast<unsigned long long>(rva));
-        } else {
-            fprintf(crashFile, "Module: Unknown / JIT memory\n");
+    if (writeCrashDump) {
+        HANDLE dump = CreateFileA("repo_cheat_crash.dmp", GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (dump != INVALID_HANDLE_VALUE) {
+            MINIDUMP_EXCEPTION_INFORMATION info{GetCurrentThreadId(), exception, FALSE};
+            writeCrashDump(GetCurrentProcess(), GetCurrentProcessId(), dump, MiniDumpNormal, &info, nullptr, nullptr);
+            CloseHandle(dump);
         }
-
-        if (pExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
-            pExceptionInfo->ExceptionRecord->NumberParameters >= 2) {
-            ULONG_PTR op = pExceptionInfo->ExceptionRecord->ExceptionInformation[0];
-            ULONG_PTR targetAddr = pExceptionInfo->ExceptionRecord->ExceptionInformation[1];
-            const char* opStr = (op == 0) ? "Read" : (op == 1) ? "Write" : (op == 8) ? "Execute" : "Unknown";
-            fprintf(crashFile, "Access Violation Operation: %s at address: 0x%p\n", opStr, reinterpret_cast<void*>(targetAddr));
-        }
-
-        if (pExceptionInfo->ContextRecord) {
-#if defined(_M_X64) || defined(__x86_64__)
-            fprintf(crashFile, "RIP: 0x%p  RAX: 0x%p  RBX: 0x%p\n",
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rip),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rax),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rbx));
-            fprintf(crashFile, "RCX: 0x%p  RDX: 0x%p  RSP: 0x%p  RBP: 0x%p\n",
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rcx),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rdx),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rsp),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rbp));
-            fprintf(crashFile, "RSI: 0x%p  RDI: 0x%p  R8: 0x%p  R9: 0x%p\n",
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rsi),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->Rdi),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->R8),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->R9));
-            fprintf(crashFile, "R10: 0x%p  R11: 0x%p  R12: 0x%p  R13: 0x%p\n",
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->R10),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->R11),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->R12),
-                    reinterpret_cast<void*>(pExceptionInfo->ContextRecord->R13));
-#endif
-        }
-        fclose(crashFile);
     }
-
-    Sleep(5000);
-    return EXCEPTION_CONTINUE_SEARCH;
+    return s_PrevExceptionFilter ? s_PrevExceptionFilter(exception) : EXCEPTION_CONTINUE_SEARCH;
 }
 
 }

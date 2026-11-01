@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <cstdint>
+#include <atomic>
 
 #ifndef VK_MWHEELUP
 #define VK_MWHEELUP   0x0E
@@ -22,11 +23,11 @@ public:
     static bool ConsumeWheelUp();
     static bool ConsumeWheelDown();
 
-    static inline HWND s_Window = nullptr;
+    static inline std::atomic<HWND> s_Window{nullptr};
     static inline WNDPROC s_OriginalWndProc = nullptr;
 
-    static inline ULONGLONG s_LastWheelUpTime = 0;
-    static inline ULONGLONG s_LastWheelDownTime = 0;
+    static inline std::atomic<ULONGLONG> s_LastWheelUpTime{0};
+    static inline std::atomic<ULONGLONG> s_LastWheelDownTime{0};
     static inline bool s_WheelUpConsumed = true;
     static inline bool s_WheelDownConsumed = true;
 };

@@ -4,6 +4,8 @@
 #include "unity/unity_engine.h"
 #include "minhook/include/MinHook.h"
 #include "features/removals.h"
+#include "runtime.h"
+#include "core/hook_activity.h"
 #include <mutex>
 #include <utility>
 
@@ -23,7 +25,20 @@ namespace {
     bool appearanceHookReady = false;
 
     void PlayerUpdateHook(void* controller) {
+        Core::HookActivity activity;
         originalPlayerUpdate(controller);
+        Runtime::Get().Tick();
+        if (!GameState::Get().IsReady() || Runtime::Get().IsStopping()) return;
+        if (GameState::Get().IsMapLoadingOrRestarting()) {
+            std::lock_guard<std::mutex> lock(appearanceMutex);
+            if (appearancePending) {
+                appearancePending = false;
+                appearanceReady = true;
+                appearanceSuccess = false;
+                appearanceMessage = "[-] Scene is changing. Select a player after loading.";
+            }
+            return;
+        }
         AppearanceChange request;
         {
             std::lock_guard<std::mutex> lock(appearanceMutex);
@@ -55,7 +70,7 @@ namespace {
 }
 
 bool GameState::QueueCosmeticChange(uintptr_t target, bool cosmetics, bool colors) {
-    if (!appearanceHookReady || !target || (!cosmetics && !colors)) return false;
+    if (!appearanceHookReady || Runtime::Get().IsStopping() || !target || (!cosmetics && !colors)) return false;
     std::lock_guard<std::mutex> lock(appearanceMutex);
     pendingAppearance = { target, cosmetics, colors };
     appearancePending = true;
@@ -77,13 +92,15 @@ GameState& GameState::Get() {
     return instance;
 }
 
-void GameState::ResolveOffsets() {
+bool GameState::ResolveOffsets() {
     auto& bridge = Mono::Bridge::Get();
+    bool valid = true;
     LOG_INFO("Dynamically resolving runtime field offsets via Mono metadata...");
 
     #define RESOLVE_FIELD(klass, fieldName, targetVar, fallback) \
-        targetVar = bridge.GetFieldOffset(klass, fieldName, fallback); \
-        LOG_OK("Field [%s::%s] -> 0x%X (+%d)", #klass, fieldName, targetVar, targetVar);
+        targetVar = bridge.GetFieldOffset(klass, fieldName, -1); \
+        if (targetVar <= 0) { valid = false; LOG_ERR("Required field missing: %s::%s; gameplay features disabled", #klass, fieldName); } \
+        else LOG_OK("Field [%s::%s] -> 0x%X (+%d)", #klass, fieldName, targetVar, targetVar);
 
     RESOLVE_FIELD(klassEnemyDirector, "enemiesSpawned", offsets.EnemyDirector_enemiesSpawned, 0x0108);
     RESOLVE_FIELD(klassEnemyParent, "enemyName", offsets.EnemyParent_enemyName, 0x0010);
@@ -222,10 +239,12 @@ void GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassCameraPosition, "overridePositionTarget", offsets.CameraPosition_overridePositionTarget, 0x003C);
 
     #undef RESOLVE_FIELD
+    return valid;
 }
 
 bool GameState::Initialize() {
     auto& bridge = Mono::Bridge::Get();
+    if (!bridge.AttachCurrentThread()) return false;
     MonoImage* appImage = bridge.GetAppImage();
     if (!appImage) return false;
 
@@ -324,20 +343,24 @@ bool GameState::Initialize() {
 
     #undef GET_APP_CLASS
 
-    ResolveOffsets();
+    if (!ResolveOffsets()) return false;
 
-    // Present runs on the render thread; cosmetics instantiate Unity objects.
-    // Dispatch appearance changes from the local controller's managed Update instead.
+    // All gameplay and scene collection runs in GameDirector.Update, including
+    // lobbies without a local PlayerController. Present consumes native snapshots only.
     auto compileMethod = reinterpret_cast<void* (*)(MonoMethod*)>(GetProcAddress(
         GetModuleHandleA("mono-2.0-bdwgc.dll") ? GetModuleHandleA("mono-2.0-bdwgc.dll")
             : GetModuleHandleA("mono.dll"), "mono_compile_method"));
-    MonoMethod* update = bridge.FindMethod(klassPlayerController, "Update", 0);
+    MonoMethod* update = bridge.FindMethod(klassGameDirector, "Update", 0);
     void* updateCode = compileMethod && update ? compileMethod(update) : nullptr;
     if (updateCode && MH_CreateHook(updateCode, &PlayerUpdateHook,
         reinterpret_cast<void**>(&originalPlayerUpdate)) == MH_OK) {
         appearanceHookReady = MH_EnableHook(updateCode) == MH_OK;
+        if (!appearanceHookReady) MH_RemoveHook(updateCode);
     }
-    if (!appearanceHookReady) LOG_ERR("Appearance changes unavailable: main-thread Update hook failed");
+    if (!appearanceHookReady) {
+        LOG_ERR("Game-thread Update hook failed; gameplay features disabled");
+        return false;
+    }
 
     Features::Removals::Get().Initialize();
     m_Initialized = (klassEnemyDirector != nullptr || klassValuableDirector != nullptr);

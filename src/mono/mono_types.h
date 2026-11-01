@@ -36,3 +36,5 @@ typedef void* (*mono_object_unbox_t)(MonoObject* obj);
 typedef char* (*mono_string_to_utf8_t)(MonoString* string_obj);
 typedef MonoString* (*mono_string_new_t)(MonoDomain* domain, const char* text);
 typedef void (*mono_free_t)(void* ptr);
+typedef uint32_t (*mono_gchandle_new_t)(MonoObject* object, int pinned);
+typedef void (*mono_gchandle_free_t)(uint32_t handle);

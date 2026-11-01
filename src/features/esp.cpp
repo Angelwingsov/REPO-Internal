@@ -83,32 +83,49 @@ void ESP::DrawCrosshair(ImDrawList* drawList, float screenW, float screenH) {
     drawList->AddLine(ImVec2(midX, midY - sz), ImVec2(midX, midY + sz), col, 1.5f);
 }
 
+void ESP::Update(float screenWidth, float screenHeight) {
+    m_Frame.Publish(Collect(screenWidth, screenHeight));
+}
+
+ESP::Frame ESP::Collect(float screenWidth, float screenHeight) {
+    Frame frame;
+    frame.width = screenWidth;
+    frame.height = screenHeight;
+    frame.timestamp = GetTickCount64();
+    auto& config = Core::Config::Get();
+    config.diagnostics.monstersFound = config.diagnostics.playersFound = 0;
+    config.diagnostics.valuablesFound = config.diagnostics.itemsFound = 0;
+    config.diagnostics.cameraValid = false;
+    config.diagnostics.cameraSource = "None";
+    config.diagnostics.mapLoading = Game::GameState::Get().IsMapLoadingOrRestarting();
+    if (config.diagnostics.mapLoading || screenWidth < 50.0f || screenHeight < 50.0f) return frame;
+    auto& engine = Unity::Engine::Get();
+    const char* source = "None";
+    MonoObject* camera = engine.FindActiveCamera(&source);
+    config.diagnostics.cameraSource = source;
+    config.diagnostics.cameraValid = camera != nullptr;
+    if (!camera) return frame;
+    engine.UpdateFrameCameraMetrics(camera, screenWidth, screenHeight);
+    auto position = engine.GetPlayerOrCameraPosition(camera);
+    auto& entities = Game::EntityManager::Get();
+    if (config.monster.enabled) entities.CollectMonsters(camera, position, screenWidth, screenHeight, config.monster.maxDistance, frame.monsters);
+    if (config.player.enabled) entities.CollectPlayers(camera, position, screenWidth, screenHeight, config.player.maxDistance, config.player.hideLocalPlayer, frame.players);
+    if (config.valuable.enabled) entities.CollectValuables(camera, position, screenWidth, screenHeight, config.valuable.maxDistance, config.valuable.hideExtracted, config.valuable.minDollarValue, frame.valuables);
+    if (config.item.enabled) entities.CollectItems(camera, position, screenWidth, screenHeight, config.item.maxDistance, frame.items);
+    config.diagnostics.monstersFound = static_cast<int>(frame.monsters.size());
+    config.diagnostics.playersFound = static_cast<int>(frame.players.size());
+    config.diagnostics.valuablesFound = static_cast<int>(frame.valuables.size());
+    config.diagnostics.itemsFound = static_cast<int>(frame.items.size());
+    frame.available = true;
+    return frame;
+}
+
 void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
     if (!drawList || screenWidth < 50.0f || screenHeight < 50.0f) return;
-
+    auto frame = m_Frame.Read();
+    if (!frame.available || GetTickCount64() - frame.timestamp > 1000 ||
+        frame.width != screenWidth || frame.height != screenHeight) return;
     auto& config = Core::Config::Get();
-    auto& gameState = Game::GameState::Get();
-    auto& engine = Unity::Engine::Get();
-
-    if (gameState.IsMapLoadingOrRestarting()) {
-        config.diagnostics.mapLoading = true;
-        return;
-    }
-    config.diagnostics.mapLoading = false;
-
-    const char* cameraSource = "None";
-    MonoObject* camera = engine.FindActiveCamera(&cameraSource);
-    config.diagnostics.cameraSource = cameraSource;
-    config.diagnostics.cameraValid = (camera != nullptr);
-
-    if (!camera) {
-        return;
-    }
-
-    engine.UpdateFrameCameraMetrics(camera, screenWidth, screenHeight);
-
-    Unity::Vector3 referencePos = engine.GetPlayerOrCameraPosition(camera);
-
     if (config.visual.drawCrosshair) {
         DrawCrosshair(drawList, screenWidth, screenHeight);
     }
@@ -116,8 +133,7 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
     float bgAlpha = config.visual.textBackground ? config.visual.textBgAlpha : 0.0f;
 
     if (config.monster.enabled) {
-        std::vector<Game::MonsterEntity> monsters;
-        Game::EntityManager::Get().CollectMonsters(camera, referencePos, screenWidth, screenHeight, config.monster.maxDistance, monsters);
+        auto& monsters = frame.monsters;
         config.diagnostics.monstersFound = static_cast<int>(monsters.size());
 
         std::sort(monsters.begin(), monsters.end(), [](const Game::MonsterEntity& a, const Game::MonsterEntity& b) {
@@ -183,11 +199,7 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
     }
 
     if (config.player.enabled) {
-        std::vector<Game::PlayerEntity> players;
-        Game::EntityManager::Get().CollectPlayers(
-            camera, referencePos, screenWidth, screenHeight,
-            config.player.maxDistance, config.player.hideLocalPlayer, players
-        );
+        auto& players = frame.players;
         config.diagnostics.playersFound = static_cast<int>(players.size());
 
         std::sort(players.begin(), players.end(), [](const Game::PlayerEntity& a, const Game::PlayerEntity& b) {
@@ -254,12 +266,7 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
     }
 
     if (config.valuable.enabled) {
-        std::vector<Game::ValuableEntity> valuables;
-        Game::EntityManager::Get().CollectValuables(
-            camera, referencePos, screenWidth, screenHeight,
-            config.valuable.maxDistance, config.valuable.hideExtracted,
-            config.valuable.minDollarValue, valuables
-        );
+        auto& valuables = frame.valuables;
         config.diagnostics.valuablesFound = static_cast<int>(valuables.size());
 
         std::sort(valuables.begin(), valuables.end(), [](const Game::ValuableEntity& a, const Game::ValuableEntity& b) {
@@ -291,8 +298,7 @@ void ESP::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
     }
 
     if (config.item.enabled) {
-        std::vector<Game::ItemEntity> items;
-        Game::EntityManager::Get().CollectItems(camera, referencePos, screenWidth, screenHeight, config.item.maxDistance, items);
+        auto& items = frame.items;
         config.diagnostics.itemsFound = static_cast<int>(items.size());
 
         std::sort(items.begin(), items.end(), [](const Game::ItemEntity& a, const Game::ItemEntity& b) {

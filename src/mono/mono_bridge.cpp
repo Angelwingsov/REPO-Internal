@@ -21,7 +21,7 @@ void Bridge::AssemblyCallback(void* item, void* userData) {
     if (!rawName) return;
 
     std::string name(rawName);
-    if (name.find("Assembly-CSharp") != std::string::npos && !bridge->m_AppImage) {
+    if ((name == "Assembly-CSharp" || name == "Assembly-CSharp.dll") && !bridge->m_AppImage) {
         bridge->m_AppImage = img;
         LOG_OK("Found Assembly-CSharp Image: %p (%s)", img, rawName);
     }
@@ -87,6 +87,8 @@ bool Bridge::Initialize() {
     RESOLVE_EXPORT(mono_string_to_utf8);
     RESOLVE_EXPORT(mono_string_new);
     RESOLVE_EXPORT(mono_free);
+    RESOLVE_EXPORT(mono_gchandle_new);
+    RESOLVE_EXPORT(mono_gchandle_free);
     #undef RESOLVE_EXPORT
 
     if (!m_mono_get_root_domain) {
@@ -100,7 +102,7 @@ bool Bridge::Initialize() {
         return false;
     }
 
-    AttachCurrentThread();
+    if (!AttachCurrentThread()) return false;
 
     if (m_mono_assembly_foreach) {
         m_mono_assembly_foreach(reinterpret_cast<MonoFunc>(AssemblyCallback), this);
@@ -115,18 +117,22 @@ bool Bridge::Initialize() {
     return true;
 }
 
-void Bridge::AttachCurrentThread() {
+bool Bridge::AttachCurrentThread() {
     static thread_local bool s_bAttached = false;
     if (!s_bAttached && m_mono_thread_attach && m_RootDomain) {
         __try {
-            m_mono_thread_attach(m_RootDomain);
-            s_bAttached = true;
-            LOG_OK("Attached thread (TID: %lu) to Mono runtime", GetCurrentThreadId());
+            // mono_thread_current is unsafe on unregistered Unity render threads.
+            // mono_thread_attach is idempotent and establishes JIT TLS itself.
+            if (m_mono_thread_attach(m_RootDomain)) {
+                s_bAttached = true;
+                LOG_OK("Attached thread (TID: %lu) to Mono runtime", GetCurrentThreadId());
+            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {
             LOG_ERR("Failed to attach thread (TID: %lu) to Mono", GetCurrentThreadId());
         }
     }
+    return s_bAttached;
 }
 
 MonoClass* Bridge::FindClass(MonoImage* image, const char* nameSpace, const char* name) {
@@ -159,7 +165,7 @@ void* Bridge::GetStaticFieldValue(MonoClass* klass, const char* name) {
         return nullptr;
     }
 
-    AttachCurrentThread();
+    if (!AttachCurrentThread()) return nullptr;
 
     __try {
         void* vtable = m_mono_class_vtable(m_RootDomain, klass);
@@ -182,7 +188,7 @@ bool Bridge::GetStaticBool(MonoClass* klass, const char* name, bool defaultVal) 
         return defaultVal;
     }
 
-    AttachCurrentThread();
+    if (!AttachCurrentThread()) return defaultVal;
 
     __try {
         void* vtable = m_mono_class_vtable(m_RootDomain, klass);
@@ -202,6 +208,7 @@ bool Bridge::GetStaticBool(MonoClass* klass, const char* name, bool defaultVal) 
 
 bool Bridge::TryInvokeMethod(MonoMethod* method, void* obj, void** params) {
     if (!method || !m_mono_runtime_invoke) return false;
+    if (!AttachCurrentThread()) return false;
     __try {
         MonoObject* exception = nullptr;
         m_mono_runtime_invoke(method, obj, params, &exception);
@@ -216,7 +223,7 @@ bool Bridge::TryInvokeMethod(MonoMethod* method, void* obj, void** params) {
 MonoObject* Bridge::InvokeMethod(MonoMethod* method, void* obj, void** params, MonoObject** exc) {
     if (!method || !m_mono_runtime_invoke) return nullptr;
 
-    AttachCurrentThread();
+    if (!AttachCurrentThread()) return nullptr;
 
     __try {
         return m_mono_runtime_invoke(method, obj, params, exc);
@@ -236,30 +243,26 @@ void* Bridge::SafeUnboxRaw(MonoObject* obj) {
     }
 }
 
-static char* SafeStringToUtf8Helper(mono_string_to_utf8_t fn, MonoString* mstr) {
-    if (!fn || !mstr) return nullptr;
-    __try {
-        return fn(mstr);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 std::string Bridge::ReadMonoString(MonoString* mstr) {
-    char* utf8Str = SafeStringToUtf8Helper(m_mono_string_to_utf8, mstr);
-    if (!utf8Str) return "";
-
-    std::string result(utf8Str);
-    if (m_mono_free) {
-        m_mono_free(utf8Str);
-    }
+    // Do not call mono_string_to_utf8 on raw pointers obtained from a live scene.
+    // A destroyed object's memory can already have been reclaimed by the collector.
+    uintptr_t address = reinterpret_cast<uintptr_t>(mstr);
+    int32_t length = 0;
+    constexpr size_t lengthOffset = sizeof(void*) * 2;
+    if (!mstr || !Memory::ReadInt(address + lengthOffset, length) || length <= 0 || length > 16384) return "";
+    std::wstring characters(static_cast<size_t>(length), L'\0');
+    if (!Memory::SafeCopyMemory(characters.data(), reinterpret_cast<void*>(address + lengthOffset + sizeof(int32_t)),
+        characters.size() * sizeof(wchar_t))) return "";
+    int required = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, characters.data(), length, nullptr, 0, nullptr, nullptr);
+    if (required <= 0) return "";
+    std::string result(static_cast<size_t>(required), '\0');
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, characters.data(), length, result.data(), required, nullptr, nullptr) != required) return "";
     return result;
 }
 
 MonoString* Bridge::CreateString(const char* text) {
     if (!m_mono_string_new || !text) return nullptr;
-    AttachCurrentThread();
+    if (!AttachCurrentThread()) return nullptr;
     MonoDomain* domain = m_mono_domain_get ? m_mono_domain_get() : m_RootDomain;
     if (!domain) domain = m_RootDomain;
     __try {
@@ -268,6 +271,18 @@ MonoString* Bridge::CreateString(const char* text) {
     __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
+}
+
+uint32_t Bridge::PinObject(MonoObject* object) {
+    if (!object || !m_mono_gchandle_new || !m_mono_gchandle_free) return 0;
+    __try { return m_mono_gchandle_new(object, 1); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+}
+
+void Bridge::FreePin(uint32_t handle) {
+    if (!handle || !m_mono_gchandle_free) return;
+    __try { m_mono_gchandle_free(handle); }
+    __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 }

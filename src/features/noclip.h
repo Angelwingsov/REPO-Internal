@@ -8,7 +8,7 @@ class NoClip {
 public:
     static NoClip& Get();
 
-    void Update();
+    void Update(float deltaTime);
 
 private:
     NoClip() = default;

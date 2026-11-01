@@ -21,14 +21,22 @@ inline bool IsValidPtr(const void* ptr) {
     return IsValidAddress(reinterpret_cast<uintptr_t>(ptr));
 }
 
+inline bool IsValidRange(uintptr_t address, size_t size) {
+    return size > 0 && IsValidAddress(address) &&
+        size - 1 <= UINTPTR_MAX - address && IsValidAddress(address + size - 1);
+}
+
 template <typename T>
 inline bool Read(uintptr_t address, T& outValue) {
     static_assert(std::is_trivially_copyable_v<T>, "Type must be trivially copyable for safe memory read");
-    if (!IsValidAddress(address)) {
+    if (!IsValidRange(address, sizeof(T))) {
         outValue = T{};
         return false;
     }
-    return SafeCopyMemory(&outValue, reinterpret_cast<const void*>(address), sizeof(T));
+    T value{};
+    bool success = SafeCopyMemory(&value, reinterpret_cast<const void*>(address), sizeof(T));
+    outValue = success ? value : T{};
+    return success;
 }
 
 template <typename T>
@@ -57,7 +65,7 @@ inline bool ReadByte(uintptr_t address, uint8_t& outValue) {
 template <typename T>
 inline bool Write(uintptr_t address, const T& value) {
     static_assert(std::is_trivially_copyable_v<T>, "Type must be trivially copyable for safe memory write");
-    if (!IsValidAddress(address)) return false;
+    if (!IsValidRange(address, sizeof(T))) return false;
     return SafeCopyMemory(reinterpret_cast<void*>(address), &value, sizeof(T));
 }
 
@@ -79,6 +87,7 @@ inline bool ReadMonoListCount(uintptr_t listPtr, int32_t& outCount) {
 
 template <typename T = uintptr_t>
 bool ReadMonoList(uintptr_t listPtr, std::vector<T>& outList, size_t maxElements = 2000) {
+    static_assert(sizeof(T) == sizeof(uintptr_t), "ReadMonoList supports reference lists only");
     outList.clear();
     if (!IsValidAddress(listPtr)) return false;
 
@@ -93,20 +102,26 @@ bool ReadMonoList(uintptr_t listPtr, std::vector<T>& outList, size_t maxElements
     if (!ReadPtr(listPtr + itemsOffset, itemsArray)) return false;
     if (!ReadInt(listPtr + countOffset, count)) return false;
 
-    if (!IsValidAddress(itemsArray) || count <= 0 || static_cast<size_t>(count) > maxElements) {
+    if (count < 0 || static_cast<size_t>(count) > maxElements) {
         return false;
     }
+    if (count == 0) return true;
+    if (!IsValidAddress(itemsArray)) return false;
+    uintptr_t capacity = 0;
+    if (!ReadPtr(itemsArray + sizeof(void*) * 3, capacity) || static_cast<uintptr_t>(count) > capacity) return false;
 
     uintptr_t arrayVTable = 0;
     if (!ReadPtr(itemsArray, arrayVTable) || !IsValidAddress(arrayVTable)) {
         return false;
     }
 
+    std::vector<uintptr_t> references(static_cast<size_t>(count));
+    if (!IsValidRange(itemsArray + arrayElemOffset, references.size() * sizeof(uintptr_t)) ||
+        !SafeCopyMemory(references.data(), reinterpret_cast<void*>(itemsArray + arrayElemOffset), references.size() * sizeof(uintptr_t))) return false;
     outList.reserve(count);
     for (int32_t i = 0; i < count; ++i) {
-        uintptr_t element = 0;
-        uintptr_t elemAddress = itemsArray + arrayElemOffset + (i * sizeof(uintptr_t));
-        if (ReadPtr(elemAddress, element) && IsValidAddress(element)) {
+        uintptr_t element = references[static_cast<size_t>(i)];
+        if (IsValidAddress(element)) {
             if constexpr (std::is_pointer_v<T>) {
                 outList.push_back(reinterpret_cast<T>(element));
             } else {

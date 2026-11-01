@@ -1,6 +1,7 @@
 #include "removals.h"
 #include "core/config.h"
 #include "core/logger.h"
+#include "core/hook_activity.h"
 #include "memory/memory.h"
 #include "mono/mono_bridge.h"
 #include "unity/unity_engine.h"
@@ -64,6 +65,7 @@ Property<float> ambientIntensity;
 uintptr_t environmentOwner = 0;
 
 struct FieldOverride {
+    Mono::PinnedObject pin;
     uintptr_t object = 0;
     int offset = -1;
     std::array<unsigned char, 4> original{};
@@ -77,11 +79,13 @@ template<typename T> void OverrideField(uintptr_t object, int offset, T value) {
     static_assert(sizeof(T) <= 4);
     if (!Valid(object) || offset <= 0) return;
     FieldOverride saved;
+    saved.pin = Mono::PinnedObject(reinterpret_cast<MonoObject*>(object));
+    if (!saved.pin) return;
     saved.object = object;
     saved.offset = offset;
     saved.size = sizeof(T);
     if (Memory::SafeCopyMemory(saved.original.data(), reinterpret_cast<void*>(object + offset), sizeof(T)) &&
-        Memory::Write(object + offset, value)) postOverrides.push_back(saved);
+        Memory::Write(object + offset, value)) postOverrides.push_back(std::move(saved));
 }
 
 MonoMethod* behaviourGet = nullptr;
@@ -89,6 +93,7 @@ MonoMethod* behaviourSet = nullptr;
 MonoMethod* activeGet = nullptr;
 MonoMethod* activeSet = nullptr;
 struct ObjectSwitch {
+    Mono::PinnedObject pin;
     uintptr_t object = 0;
     bool original = false;
     bool applied = false;
@@ -99,6 +104,7 @@ struct ObjectSwitch {
             Mono::Bridge::Get().TryInvokeMethod(setter, reinterpret_cast<void*>(object), args);
         }
         applied = false;
+        pin.Reset();
     }
     void Disable(uintptr_t target, MonoMethod* get, MonoMethod* set) {
         if (!Valid(target) || !get || !set) return;
@@ -110,6 +116,8 @@ struct ObjectSwitch {
             return;
         }
         Restore();
+        Mono::PinnedObject hold(reinterpret_cast<MonoObject*>(target));
+        if (!hold) return;
         MonoObject* exc = nullptr;
         MonoObject* value = bridge.InvokeMethod(get, reinterpret_cast<void*>(target), nullptr, &exc);
         if (!value || exc || !bridge.Unbox(value, original)) return;
@@ -118,6 +126,7 @@ struct ObjectSwitch {
         bool disabled = false;
         void* args[] = { &disabled };
         applied = bridge.TryInvokeMethod(set, reinterpret_cast<void*>(target), args);
+        if (applied) pin = std::move(hold);
     }
 };
 ObjectSwitch hurtImage, glitchParent;
@@ -149,7 +158,8 @@ void TrackOverrides() {
 }
 bool StopRequested() {
     if (!stopping) return false;
-    RestoreEnvironment();
+    if (Valid(environmentOwner)) RestoreEnvironment();
+    else fog.applied = ambientMode.applied = ambientLight.applied = ambientIntensity.applied = false;
     RestorePost();
     hurtImage.Restore();
     glitchParent.Restore();
@@ -159,6 +169,7 @@ bool StopRequested() {
 }
 
 void EnvironmentHook(void* object) {
+    Core::HookActivity activity;
     if (StopRequested()) { environmentUpdate(object); return; }
     uintptr_t owner = reinterpret_cast<uintptr_t>(object);
     if (owner == environmentOwner) RestoreEnvironment();
@@ -168,7 +179,7 @@ void EnvironmentHook(void* object) {
         environmentOwner = owner;
     }
     environmentUpdate(object);
-    const auto& config = Core::Config::Get();
+    const auto config = Core::Config::Copy();
     if (config.removals.enabled && config.removals.noFog) fog.Apply(false);
     if (config.fullbright.enabled) {
         float brightness = config.fullbright.brightness;
@@ -181,10 +192,11 @@ void EnvironmentHook(void* object) {
 }
 
 void PostHook(void* object) {
+    Core::HookActivity activity;
     if (StopRequested()) { postUpdate(object); return; }
     RestorePost();
     postUpdate(object);
-    const auto& config = Core::Config::Get().removals;
+    const auto config = Core::Config::Copy().removals;
     if (config.enabled && objectClass) {
         uintptr_t volume = ReadObject(object, volumeOffset);
         if (config.noPostProcessing && Valid(volume))
@@ -202,7 +214,8 @@ void PostHook(void* object) {
 }
 
 void ShakeHook(void* object) {
-    const auto& config = Core::Config::Get().removals;
+    Core::HookActivity activity;
+    const auto config = Core::Config::Copy().removals;
     if (!StopRequested() && config.enabled && config.noCameraShake) {
         // Cancel transient impulses and interpolation endpoints; preserve the tuning parameters.
         for (int offset : shakeOffsets) if (offset > 0) Memory::WriteFloat(reinterpret_cast<uintptr_t>(object) + offset, 0.0f);
@@ -210,7 +223,8 @@ void ShakeHook(void* object) {
     shakeUpdate(object);
 }
 void NoiseHook(void* object) {
-    const auto& config = Core::Config::Get().removals;
+    Core::HookActivity activity;
+    const auto config = Core::Config::Copy().removals;
     if (StopRequested() || !config.enabled || !config.noCameraNoise) { noiseUpdate(object); return; }
     // CameraNoise writes into AnimNoise; suppress inputs only for this invocation.
     std::array<float, 3> original{};
@@ -225,8 +239,9 @@ void NoiseHook(void* object) {
         if (saved[i]) Memory::WriteFloat(reinterpret_cast<uintptr_t>(object) + noiseOffsets[i], original[i]);
 }
 void GlitchHook(void* object) {
+    Core::HookActivity activity;
     if (StopRequested()) { glitchUpdate(object); return; }
-    const auto& config = Core::Config::Get().removals;
+    const auto config = Core::Config::Copy().removals;
     if (!config.enabled || !config.noCameraGlitch) glitchParent.Restore();
     if (config.enabled && config.noCameraGlitch) {
         for (int offset : glitchOffsets) {
@@ -240,8 +255,9 @@ void GlitchHook(void* object) {
     TrackOverrides();
 }
 void HurtHook(void* object) {
+    Core::HookActivity activity;
     if (StopRequested()) { hurtUpdate(object); return; }
-    const auto& config = Core::Config::Get().removals;
+    const auto config = Core::Config::Copy().removals;
     if (!config.enabled || !config.noHurtOverlay) hurtImage.Restore();
     hurtUpdate(object);
     if (config.enabled && config.noHurtOverlay)
@@ -264,8 +280,10 @@ Removals& Removals::Get() {
     static Removals instance;
     return instance;
 }
+void Removals::PollRestore() { StopRequested(); }
 void Removals::Initialize() {
     auto& bridge = Mono::Bridge::Get();
+    if (!bridge.AttachCurrentThread()) return;
     HMODULE mono = GetModuleHandleA("mono-2.0-bdwgc.dll");
     if (!mono) mono = GetModuleHandleA("mono.dll");
     if (!mono) return;

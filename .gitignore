@@ -1,6 +1,7 @@
 *.obj
 *.log
 *.pdb
+*.dmp
 *.exp
 *.lib
 *.iobj

@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <cstdint>
+#include <mutex>
 
 #ifndef VK_MWHEELUP
 #define VK_MWHEELUP   0x0E
@@ -206,6 +207,10 @@ struct Diagnostics {
 class Config {
 public:
     static Config& Get();
+    static Config& Global();
+    static std::recursive_mutex& Mutex();
+    static Config Copy();
+    class Scope;
 
     MonsterConfig monster;
     PlayerESPConfig player;
@@ -227,7 +232,18 @@ public:
     void ResetToDefaults();
 
 private:
+    static inline thread_local Config* s_ThreadConfig = nullptr;
     Config() = default;
+};
+
+class Config::Scope {
+public:
+    explicit Scope(Config& config) : m_Previous(s_ThreadConfig) { s_ThreadConfig = &config; }
+    ~Scope() { s_ThreadConfig = m_Previous; }
+    Scope(const Scope&) = delete;
+    Scope& operator=(const Scope&) = delete;
+private:
+    Config* m_Previous;
 };
 
 }

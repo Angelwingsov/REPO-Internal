@@ -3,6 +3,7 @@
 #include "core/config.h"
 #include "mono/mono_bridge.h"
 #include "game/state.h"
+#include "game/runtime.h"
 #include "features/player.h"
 #include "features/godmode.h"
 #include "features/removals.h"
@@ -142,11 +143,11 @@ void Menu::Render() {
                 ImGui::Spacing();
                 ImGui::SeparatorText("Actions");
                 if (ImGui::Button("Instant Full Heal", ImVec2(150, 24))) {
-                    Features::GodMode::Get().HealLocalPlayer();
+                    Game::Runtime::Get().Queue(Game::Action::Heal);
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Revive Self (If Dead)", ImVec2(160, 24))) {
-                    Features::GodMode::Get().ReviveLocalPlayer();
+                    Game::Runtime::Get().Queue(Game::Action::Revive);
                 }
             }
         }
@@ -489,7 +490,9 @@ void Menu::Render() {
                     ? "Applying on next game update..." : "[-] Game update unavailable. Re-enter the session or reload the DLL.");
             };
 
-            std::vector<Game::ServerPlayerInfo> serverPlayers = gs.GetServerPlayers();
+            auto state = Game::Runtime::Get().ReadState();
+            if (GetTickCount64() - state.timestamp > 1000) state.players.clear();
+            std::vector<Game::ServerPlayerInfo> serverPlayers = std::move(state.players);
             for (auto it = serverPlayers.begin(); it != serverPlayers.end();) {
                 if (it->isLocal) it = serverPlayers.erase(it);
                 else ++it;
@@ -574,9 +577,9 @@ void Menu::Render() {
             static bool s_UnlockSuccess = false;
             static char s_StatusMessage[128] = "";
 
-            auto& gs = Game::GameState::Get();
-            int currentUnlocked = 0, currentTotal = 0;
-            bool hasStats = gs.GetCosmeticStats(currentUnlocked, currentTotal);
+            auto state = Game::Runtime::Get().ReadState();
+            int currentUnlocked = state.unlocked, currentTotal = state.total;
+            bool hasStats = state.hasCosmeticStats && GetTickCount64() - state.timestamp < 1000;
             if (hasStats) {
                 s_UnlockedCount = currentUnlocked;
                 s_TotalCount = currentTotal;
@@ -594,18 +597,16 @@ void Menu::Render() {
             }
 
             ImGui::Spacing();
+            bool unlockResult = false;
+            if (Game::Runtime::Get().TakeResult(Game::Action::UnlockCosmetics, unlockResult)) {
+                s_UnlockSuccess = unlockResult;
+                sprintf_s(s_StatusMessage, "%s", unlockResult ? "[+] Cosmetics unlocked and saved." : "[-] Unlock failed; wait until the session is ready.");
+            }
             if (ImGui::Button("Unlock All Cosmetics Permanently", ImVec2(-1.0f, 32.0f))) {
                 s_UnlockAttempted = true;
-                int u = 0, t = 0;
-                if (gs.UnlockAllCosmetics(&u, &t)) {
-                    s_UnlockSuccess = true;
-                    s_UnlockedCount = u;
-                    s_TotalCount = t;
-                    sprintf_s(s_StatusMessage, "[+] Success! Unlocked and saved %d items!", u);
-                } else {
-                    s_UnlockSuccess = false;
-                    sprintf_s(s_StatusMessage, "[-] Error: MetaManager is not loaded yet.");
-                }
+                s_UnlockSuccess = false;
+                bool queued = Game::Runtime::Get().Queue(Game::Action::UnlockCosmetics);
+                sprintf_s(s_StatusMessage, "%s", queued ? "Applying on game update..." : "[-] Game update unavailable.");
             }
 
             if (s_UnlockAttempted) {

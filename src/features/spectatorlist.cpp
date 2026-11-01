@@ -15,6 +15,12 @@ SpectatorList& SpectatorList::Get() {
 }
 
 void SpectatorList::Update() {
+    std::vector<SpectatorEntry> spectators;
+    Collect(spectators);
+    m_Snapshot.Publish(std::move(spectators));
+}
+
+void SpectatorList::Collect(std::vector<SpectatorEntry>& m_Spectators) {
     m_Spectators.clear();
 
     auto& gameState = Game::GameState::Get();
@@ -215,6 +221,7 @@ void SpectatorList::Update() {
 }
 
 void SpectatorList::Render() {
+    auto m_Spectators = m_Snapshot.Read();
     auto& cfg = Core::Config::Get();
     if (!cfg.spectatorList.enabled) return;
 

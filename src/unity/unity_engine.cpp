@@ -21,12 +21,8 @@ bool Engine::IsValidUnityObject(void* obj) {
 
     constexpr size_t cachedPtrOffset = sizeof(void*) * 2;
     uintptr_t cachedNativePtr = 0;
-    if (Memory::ReadPtr(reinterpret_cast<uintptr_t>(obj) + cachedPtrOffset, cachedNativePtr)) {
-        if (cachedNativePtr == 0 || !Memory::IsValidAddress(cachedNativePtr)) {
-            return false;
-        }
-    }
-    return true;
+    return Memory::ReadPtr(reinterpret_cast<uintptr_t>(obj) + cachedPtrOffset, cachedNativePtr) &&
+        Memory::IsValidAddress(cachedNativePtr);
 }
 
 bool Engine::Initialize() {
@@ -117,7 +113,9 @@ bool Engine::Initialize() {
     if (physImage) {
         m_klassPhysics = bridge.FindClass(physImage, "UnityEngine", "Physics");
         if (m_klassPhysics) {
-            m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 3);
+        // The three-argument overload can be (start, end, layerMask), not out RaycastHit.
+        // The five-argument signature uniquely includes the output hit buffer.
+        m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 5);
             if (!m_methodLinecast) {
                 m_methodLinecast = bridge.FindMethod(m_klassPhysics, "Linecast", 2);
             }
@@ -405,10 +403,14 @@ bool Engine::Linecast(const Vector3& start, const Vector3& end, Vector3& outHitP
     Vector3 e = end;
     InternalRaycastHit hit{};
 
-    void* params[3];
+    int layerMask = -1;
+    int triggerInteraction = 1; // QueryTriggerInteraction.Ignore
+    void* params[5];
     params[0] = &s;
     params[1] = &e;
     params[2] = &hit;
+    params[3] = &layerMask;
+    params[4] = &triggerInteraction;
 
     MonoObject* exc = nullptr;
     MonoObject* res = Mono::Bridge::Get().InvokeMethod(m_methodLinecast, nullptr, params, &exc);

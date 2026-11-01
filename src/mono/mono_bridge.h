@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <string>
 #include <vector>
+#include <utility>
 #include "mono_types.h"
 #include "core/logger.h"
 #include "memory/memory.h"
@@ -14,7 +15,7 @@ public:
 
     bool Initialize();
     bool IsReady() const { return m_Initialized && m_AppImage != nullptr && m_CoreImage != nullptr; }
-    void AttachCurrentThread();
+    bool AttachCurrentThread();
 
     MonoImage* GetAppImage() const { return m_AppImage; }
     MonoImage* GetCoreImage() const { return m_CoreImage; }
@@ -43,6 +44,8 @@ public:
 
     std::string ReadMonoString(MonoString* mstr);
     MonoString* CreateString(const char* text);
+    uint32_t PinObject(MonoObject* object);
+    void FreePin(uint32_t handle);
 
     mono_thread_attach_t m_mono_thread_attach = nullptr;
     mono_thread_current_t m_mono_thread_current = nullptr;
@@ -66,6 +69,8 @@ public:
     mono_string_to_utf8_t m_mono_string_to_utf8 = nullptr;
     mono_string_new_t m_mono_string_new = nullptr;
     mono_free_t m_mono_free = nullptr;
+    mono_gchandle_new_t m_mono_gchandle_new = nullptr;
+    mono_gchandle_free_t m_mono_gchandle_free = nullptr;
 
 private:
     Bridge() = default;
@@ -79,6 +84,24 @@ private:
     MonoImage* m_PhysicsImage = nullptr;
     MonoImage* m_PhotonImage = nullptr;
     MonoImage* m_TextMeshProImage = nullptr;
+};
+
+class PinnedObject {
+public:
+    PinnedObject() = default;
+    explicit PinnedObject(MonoObject* object) : m_Handle(Bridge::Get().PinObject(object)) {}
+    ~PinnedObject() { Reset(); }
+    PinnedObject(const PinnedObject&) = delete;
+    PinnedObject& operator=(const PinnedObject&) = delete;
+    PinnedObject(PinnedObject&& other) noexcept : m_Handle(std::exchange(other.m_Handle, 0)) {}
+    PinnedObject& operator=(PinnedObject&& other) noexcept {
+        if (this != &other) { Reset(); m_Handle = std::exchange(other.m_Handle, 0); }
+        return *this;
+    }
+    void Reset() { if (m_Handle) Bridge::Get().FreePin(std::exchange(m_Handle, 0)); }
+    explicit operator bool() const { return m_Handle != 0; }
+private:
+    uint32_t m_Handle = 0;
 };
 
 }
