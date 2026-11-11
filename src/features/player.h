@@ -45,6 +45,10 @@ private:
 
     bool m_JumpForceSaved = false;
     float m_OriginalJumpForce = 8.0f;
+
+    uintptr_t m_LastVoiceChat = 0;
+    bool m_GlobalVoiceApplied = false;
+    uint64_t m_LastVoiceApplyMs = 0;
 };
 
 }

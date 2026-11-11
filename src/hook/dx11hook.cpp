@@ -158,7 +158,7 @@ void DX11Hook::RenderOverlay(IDXGISwapChain* pSwapChain) {
     if (cfg.menu.isVisible) ::ClipCursor(nullptr);
     if (s_SubsystemsInitialized) {
         Features::ESP::Get().Render(ImGui::GetForegroundDrawList(), io.DisplaySize.x, io.DisplaySize.y);
-        Features::SpectatorList::Get().Render();
+        Features::SpectatorList::Get().Render(ImGui::GetForegroundDrawList(), io.DisplaySize.x, io.DisplaySize.y);
     }
 
     UI::Menu::Get().Render();

@@ -402,8 +402,34 @@ void PlayerMods::Update() {
                 if (cfg.troll.globalVoice) {
                     uintptr_t voiceChat = 0;
                     if (Memory::Read<uintptr_t>(avatar + gameState.offsets.PlayerAvatar_voiceChat, voiceChat) && voiceChat) {
+                     
                         Memory::WriteFloat(voiceChat + gameState.offsets.PlayerVoiceChat_SpatialDisableTimer, 0.5f);
+                    
+                        uint64_t now = GetTickCount64();
+                        if (m_LastVoiceChat != voiceChat || !m_GlobalVoiceApplied || now - m_LastVoiceApplyMs > 2000) {
+                            if (gameState.methodPlayerVoiceChatSetSpatialAudio) {
+                                int32_t spatialOff = 0;
+                                void* args[] = { &spatialOff };
+                                if (Mono::Bridge::Get().TryInvokeMethod(gameState.methodPlayerVoiceChatSetSpatialAudio,
+                                    reinterpret_cast<void*>(voiceChat), args)) {
+                                    m_GlobalVoiceApplied = true;
+                                }
+                            }
+                            m_LastVoiceChat = voiceChat;
+                            m_LastVoiceApplyMs = now;
+                        }
                     }
+                } else if (m_GlobalVoiceApplied) {
+                  
+                    if (m_LastVoiceChat && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(m_LastVoiceChat))
+                        && gameState.methodPlayerVoiceChatSetSpatialAudio) {
+                        int32_t spatialOn = 1;
+                        void* args[] = { &spatialOn };
+                        Mono::Bridge::Get().TryInvokeMethod(gameState.methodPlayerVoiceChatSetSpatialAudio,
+                            reinterpret_cast<void*>(m_LastVoiceChat), args);
+                    }
+                    m_GlobalVoiceApplied = false;
+                    m_LastVoiceChat = 0;
                 }
 
                 if (cfg.troll.overrideAnimSpeed) {

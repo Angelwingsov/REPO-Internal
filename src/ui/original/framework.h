@@ -185,6 +185,7 @@ namespace IdaLovesMe {
 		bool					 Initialized;
 		std::vector<GuiWindow*>  Windows;
 		std::vector<std::string> WindowsByName;
+		std::vector<GuiWindow*>  VisibleChildren;
 		GuiWindow*				 CurrentWindow;
 		NextWindowInfo			 NextWindowInfo;
 		Vec2					 ItemSpacing;
@@ -246,6 +247,7 @@ namespace IdaLovesMe {
 		void					 EndChild();
 
 		void					 TabButton(const char* label, int* selected, int num, int total, GuiFlags flags = NULL);
+		void					 SubTabs(int* selected, const std::vector<const char*>& icons);
 		bool					 Checkbox(const char* label, bool* v, bool special = false);
 		bool					 Button(const char* label, const Vec2& size = Vec2(0, 0));
 		void					 SliderInt(const char* label, int* v, int v_min, int v_max, const char* format = NULL, int remove = 0);

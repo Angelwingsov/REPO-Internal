@@ -134,14 +134,8 @@ struct SpectatorListConfig {
     bool enabled = true;
     bool showTarget = true;
     bool showMode = true;
-    bool hideWhenEmpty = false;
     bool onlySpectatingMe = true;
     bool showSpectatorCount = true;
-
-    float colorHeader[4] = { 0.25f, 0.65f, 1.0f, 1.0f };
-    float colorSpectator[4] = { 0.95f, 0.95f, 0.95f, 1.0f };
-    float colorTargetMe[4] = { 0.20f, 1.0f, 0.35f, 1.0f };
-    float colorTargetOther[4] = { 1.0f, 0.85f, 0.25f, 1.0f };
 };
 
 struct TrollConfig {
@@ -217,6 +211,7 @@ struct CosmeticParserConfig {
 };
 
 struct VisualConfig {
+    int category = 0;
     bool textBackground = true;
     float textBgAlpha = 0.65f;
     bool drawCrosshair = false;

@@ -240,6 +240,7 @@ public:
     MonoMethod* methodOverrideAnimationSpeed = nullptr;
     MonoMethod* methodPlayerHealthHeal = nullptr;
     MonoMethod* methodPlayerHealthInvincibleSet = nullptr;
+    MonoMethod* methodPlayerVoiceChatSetSpatialAudio = nullptr;
     MonoMethod* methodPlayerAvatarRevive = nullptr;
     MonoMethod* methodPlayerCosmeticsSetupCosmetics = nullptr;
     MonoMethod* methodPlayerCosmeticsSetupColors = nullptr;

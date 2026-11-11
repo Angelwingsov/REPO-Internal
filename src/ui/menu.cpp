@@ -258,111 +258,140 @@ void Menu::Render() {
         ui::SliderFloat("Speed multiplier",&cfg.movement.speedMultiplier,1,8,"%.1fx",.1f);
         ui::EndChild();break;
     case 1:
-        ui::BeginChild("Stamina & strength",{Vec2(0,0),Vec2(3,2)});
+        ui::BeginChild("Anti-Aim",{Vec2(0,0),Vec2(3,10)});
+        ui::Checkbox("Enabled",&cfg.antiAim.enabled);
+        KeyBind("##AntiAimKey",cfg.antiAim.toggleKey,cfg.antiAim.keyMode);
+        ui::SingleSelect("Yaw mode",&cfg.antiAim.yawMode,std::vector<const char*>{"Off","Spinbot","Jitter","Backwards","Sideways","Random"});
+        if(cfg.antiAim.yawMode==1) ui::SliderFloat("Spin speed",&cfg.antiAim.spinSpeed,30.f,1440.f,"%.0f deg/s",10.f);
+        if(cfg.antiAim.yawMode==2) ui::SliderFloat("Jitter angle",&cfg.antiAim.jitterRange,15.f,180.f,"%.0f deg",5.f);
+        ui::SingleSelect("Pitch mode",&cfg.antiAim.pitchMode,std::vector<const char*>{"Off","Down (Emotion)","Up (Sky)","Jitter","Zero (Flat)","Spin"});
+        ui::SingleSelect("Body lean",&cfg.antiAim.rollMode,std::vector<const char*>{"Off","Static lean","Jitter lean","Spasm twitch"});
+        if(cfg.antiAim.rollMode==1||cfg.antiAim.rollMode==2) ui::SliderFloat("Lean angle",&cfg.antiAim.leanAngle,-80.f,80.f,"%.0f deg",1.f);
+        ui::EndChild();
+        ui::BeginChild("Animation Breakers",{Vec2(6,0),Vec2(3,10)});
+        ui::Checkbox("Enabled",&cfg.animBreaker.enabled);
+        ui::Checkbox("Moonwalk / slide glide",&cfg.animBreaker.slideWalk);
+        ui::Checkbox("Frozen legs (statue)",&cfg.animBreaker.staticLegs);
+        ui::Checkbox("Super crawl (on belly)",&cfg.animBreaker.forceCrawl);
+        ui::Checkbox("Pose spammer",&cfg.animBreaker.poseSpammer);
+        if(cfg.animBreaker.poseSpammer) ui::SliderFloat("Spam frequency",&cfg.animBreaker.poseSpamSpeed,2.f,30.f,"%.0f Hz",1.f);
+        ui::Checkbox("Exorcist head spin",&cfg.animBreaker.headBreaker);
+        if(cfg.animBreaker.headBreaker) ui::SliderFloat("Head spin speed",&cfg.animBreaker.headSpinSpeed,60.f,1440.f,"%.0f deg/s",10.f);
+        ui::Checkbox("Spine spasm (scoliosis)",&cfg.animBreaker.spineBreaker);
+        if(cfg.animBreaker.spineBreaker) ui::SliderFloat("Spasm intensity",&cfg.animBreaker.spineTwitchAmount,10.f,90.f,"%.0f deg",5.f);
+        if(ui::Button("Enable all breakers")) {
+            cfg.animBreaker.enabled=true;
+            cfg.animBreaker.slideWalk=true;
+            cfg.animBreaker.poseSpammer=true;
+            cfg.animBreaker.headBreaker=true;
+            cfg.animBreaker.spineBreaker=true;
+        }
+        if(ui::Button("Reset all breakers")) cfg.animBreaker=Core::AnimBreakerConfig();
+        Status("Visible to other players in multiplayer.");
+        ui::EndChild();break;
+    case 3:
+        ui::BeginChild("Third person",{Vec2(0,0),Vec2(3,2)});
+        ui::Checkbox("Enabled",&cfg.thirdPerson.enabled);KeyBind("##ThirdPerson",cfg.thirdPerson.toggleKey,cfg.thirdPerson.keyMode);
+        ui::SliderFloat("Camera distance",&cfg.thirdPerson.distance,1,6,"%.1f m",.1f);
+        ui::SliderFloat("Shoulder offset",&cfg.thirdPerson.shoulderOffset,-1.5f,1.5f,"%.2f m",.05f);
+        ui::SliderFloat("Height offset",&cfg.thirdPerson.heightOffset,-.5f,1.5f,"%.2f m",.05f);
+        ui::Checkbox("Wall collision",&cfg.thirdPerson.collision);
+        ui::EndChild();
+        ui::BeginChild("Global voice",{Vec2(0,4),Vec2(3,6)});
+        ui::Checkbox("Enabled",&cfg.troll.globalVoice);
+        ui::EndChild();
+        ui::BeginChild("Spectator list",{Vec2(6,0),Vec2(3,10)});
+        ui::Checkbox("Enabled",&cfg.spectatorList.enabled);
+        ui::Checkbox("Show watching target",&cfg.spectatorList.showTarget);
+        ui::Checkbox("Show view mode",&cfg.spectatorList.showMode);
+        ui::Checkbox("Show spectator count",&cfg.spectatorList.showSpectatorCount);
+        ui::EndChild();break;
+    case 2:
+        ui::BeginChild("Category#Tab2",{Vec2(0,0),Vec2(9,0)},GuiFlags_NoMove|GuiFlags_NoResize);
+        ui::SubTabs(&cfg.visual.category,{"s","t","u","v"});
+        ui::EndChild();
+        switch(cfg.visual.category) {
+        default:
+        case 0:
+            ui::BeginChild("Monster ESP",{Vec2(0,2),Vec2(3,8)});
+            ui::Checkbox("Enabled",&cfg.monster.enabled);Color("##MonsterColor",cfg.monster.colorDefault);
+            EspOptions(cfg.monster.box2D,cfg.monster.cornerBox,cfg.monster.snaplines,cfg.monster.showName,cfg.monster.showDistance);
+            ui::Checkbox("Highlight chasing",&cfg.monster.highlightChasing);
+            ui::EndChild();break;
+        case 1:
+            ui::BeginChild("Player ESP",{Vec2(0,2),Vec2(3,8)});
+            ui::Checkbox("Enabled",&cfg.player.enabled);Color("##PlayerColor",cfg.player.color);
+            EspOptions(cfg.player.box2D,cfg.player.cornerBox,cfg.player.snaplines,cfg.player.showName,cfg.player.showDistance);
+            ui::Checkbox("Health",&cfg.player.showHealth);
+            ui::Checkbox("Hide local player",&cfg.player.hideLocalPlayer);
+            ui::Label("Dead player");Color("##DeadColor",cfg.player.colorDead);
+            ui::EndChild();break;
+        case 2:
+            ui::BeginChild("Items & loot",{Vec2(0,2),Vec2(3,8)});
+            {bool enabled=cfg.valuable.enabled||cfg.item.enabled;ui::Checkbox("Enabled",&enabled);cfg.valuable.enabled=cfg.item.enabled=enabled;}
+            ui::Checkbox("Name",&cfg.valuable.showName);cfg.item.showName=cfg.valuable.showName;
+            ui::Checkbox("Price",&cfg.valuable.showValue);cfg.item.showValue=cfg.valuable.showValue;
+            ui::Checkbox("Distance",&cfg.valuable.showDistance);cfg.item.showDistance=cfg.valuable.showDistance;
+            ui::Checkbox("Hide extracted",&cfg.valuable.hideExtracted);
+            ui::Label("Valuable color");Color("##LootColor",cfg.valuable.color);
+            ui::Label("Item color");Color("##ItemColor",cfg.item.color);
+            {float previous=cfg.monster.maxDistance;float distance=previous;ui::SliderFloat("Maximum distance",&distance,10,500,"%.0f m",1);
+            if(distance!=previous) cfg.monster.maxDistance=cfg.player.maxDistance=cfg.valuable.maxDistance=cfg.item.maxDistance=distance;}
+            ui::Checkbox("Text background",&cfg.visual.textBackground);
+            ui::EndChild();break;
+        case 3:
+            ui::BeginChild("Removals",{Vec2(0,2),Vec2(3,8)});
+            ui::Checkbox("Enabled",&cfg.removals.enabled);
+            RemovalGroup("Post-processing",{
+                {"All post-processing",&cfg.removals.noPostProcessing},
+                {"Film grain",&cfg.removals.noGrain},
+                {"Vignette",&cfg.removals.noVignette},
+                {"Bloom",&cfg.removals.noBloom},
+                {"Motion blur",&cfg.removals.noMotionBlur},
+                {"Lens distortion",&cfg.removals.noLensDistortion},
+                {"Chromatic aberration",&cfg.removals.noChromaticAberration}});
+            RemovalGroup("Camera & screen",{
+                {"Fog",&cfg.removals.noFog},
+                {"Shake / bob",&cfg.removals.noCameraShake},
+                {"Sway",&cfg.removals.noCameraNoise},
+                {"Glitches",&cfg.removals.noCameraGlitch},
+                {"Damage overlay",&cfg.removals.noHurtOverlay}});
+            ui::EndChild();
+            ui::BeginChild("Effects & View",{Vec2(6,2),Vec2(3,8)});
+            ui::Checkbox("Fullbright",&cfg.fullbright.enabled);
+            if(cfg.fullbright.enabled) ui::SliderFloat("Brightness",&cfg.fullbright.brightness,.1f,3,"%.2f",.05f);
+            ui::Checkbox("Crosshair",&cfg.visual.drawCrosshair);Color("##CrosshairColor",cfg.visual.crosshairColor);
+            if(cfg.visual.drawCrosshair) ui::SliderFloat("Size",&cfg.visual.crosshairSize,2,20,"%.0f px",1);
+            ui::EndChild();break;
+        }
+        break;
+    case 4:
+        ui::BeginChild("Cosmetic Parser",{Vec2(0,0),Vec2(3,10)});Cosmetics(cfg);ui::EndChild();
+        ui::BeginChild("Cosmetic unlocker",{Vec2(6,0),Vec2(3,10)});Unlocks();ui::EndChild();break;
+    case 5:
+        ui::BeginChild("Stamina & strength",{Vec2(0,0),Vec2(3,1)});
         ui::Checkbox("Infinite stamina",&cfg.movement.infiniteStamina);
         ui::Checkbox("Infinite strength",&cfg.movement.infiniteStrength);
         ui::SliderFloat("Strength level",&cfg.movement.strengthMultiplier,5,100,"%.0fx",1);
         ui::EndChild();
-        ui::BeginChild("Animation Override",{Vec2(0,4),Vec2(3,6)});
+        ui::BeginChild("Physics",{Vec2(0,3),Vec2(3,7)});
+        ui::Checkbox("Moon gravity",&cfg.troll.featherFall);
+        ui::Checkbox("Zero gravity",&cfg.troll.zeroGravity);
+        ui::EndChild();
+        ui::BeginChild("Animation Override",{Vec2(6,0),Vec2(3,1)});
         ui::Checkbox("Override animation speed",&cfg.troll.overrideAnimSpeed);
         ui::SliderFloat("Animation speed",&cfg.troll.animSpeed,.1f,5,"%.1fx",.1f);
-        if(ui::Button("Matrix (0.2x)"))cfg.troll.animSpeed=.2f;
-        if(ui::Button("Normal (1.0x)"))cfg.troll.animSpeed=1;
-        if(ui::Button("Scooby-Doo (3.0x)"))cfg.troll.animSpeed=3;
-        if(ui::Button("Sonic (5.0x)"))cfg.troll.animSpeed=5;
         ui::EndChild();
-        ui::BeginChild("Movement utilities",{Vec2(6,0),Vec2(3,5)});
+        ui::BeginChild("Movement utilities",{Vec2(6,3),Vec2(3,7)});
         ui::Checkbox("Extend grab range",&cfg.movement.extendGrabRange);
         ui::SliderFloat("Grab range",&cfg.movement.grabRange,4,30,"%.0f m",1);
         ui::Checkbox("Grab through walls",&cfg.movement.grabThroughWalls);
         ui::Checkbox("Super jump",&cfg.movement.superJump);
         ui::SliderFloat("Jump multiplier",&cfg.movement.jumpMultiplier,1,4,"%.1fx",.1f);
         ui::Checkbox("No ragdoll",&cfg.movement.noTumble);
-        ui::EndChild();
-        ui::BeginChild("Physics",{Vec2(6,7),Vec2(3,3)});
-        ui::Checkbox("Moon gravity",&cfg.troll.featherFall);
-        ui::Checkbox("Zero gravity",&cfg.troll.zeroGravity);
-        ui::EndChild();break;
-    case 2:
-        ui::BeginChild("Player ESP",{Vec2(0,0),Vec2(3,5)});
-        ui::Checkbox("Enabled",&cfg.player.enabled);Color("##PlayerColor",cfg.player.color);
-        EspOptions(cfg.player.box2D,cfg.player.cornerBox,cfg.player.snaplines,cfg.player.showName,cfg.player.showDistance);
-        ui::Checkbox("Health",&cfg.player.showHealth);
-        ui::Checkbox("Hide local player",&cfg.player.hideLocalPlayer);
-        ui::Label("Dead player");Color("##DeadColor",cfg.player.colorDead);
-        ui::EndChild();
-        ui::BeginChild("Removals",{Vec2(0,7),Vec2(3,3)});
-        ui::Checkbox("Enabled",&cfg.removals.enabled);
-        RemovalGroup("Environment",{{"Fog",&cfg.removals.noFog}});
-        RemovalGroup("Post-processing",{
-            {"All post-processing",&cfg.removals.noPostProcessing},
-            {"Film grain",&cfg.removals.noGrain},
-            {"Vignette",&cfg.removals.noVignette},
-            {"Bloom",&cfg.removals.noBloom},
-            {"Motion blur",&cfg.removals.noMotionBlur},
-            {"Lens distortion",&cfg.removals.noLensDistortion},
-            {"Chromatic aberration",&cfg.removals.noChromaticAberration}});
-        RemovalGroup("Camera & screen",{
-            {"Shake / bob",&cfg.removals.noCameraShake},
-            {"Sway",&cfg.removals.noCameraNoise},
-            {"Glitches",&cfg.removals.noCameraGlitch},
-            {"Damage overlay",&cfg.removals.noHurtOverlay}});
-        ui::EndChild();
-        ui::BeginChild("Monster ESP",{Vec2(6,0),Vec2(3,3)});
-        ui::Checkbox("Enabled",&cfg.monster.enabled);Color("##MonsterColor",cfg.monster.colorDefault);
-        EspOptions(cfg.monster.box2D,cfg.monster.cornerBox,cfg.monster.snaplines,cfg.monster.showName,cfg.monster.showDistance);
-        ui::Checkbox("Highlight chasing",&cfg.monster.highlightChasing);
-        ui::EndChild();
-        ui::BeginChild("Items & loot",{Vec2(6,5),Vec2(3,5)});
-        {bool enabled=cfg.valuable.enabled||cfg.item.enabled;ui::Checkbox("Enabled",&enabled);cfg.valuable.enabled=cfg.item.enabled=enabled;}
-        ui::Checkbox("Name",&cfg.valuable.showName);cfg.item.showName=cfg.valuable.showName;
-        ui::Checkbox("Price",&cfg.valuable.showValue);cfg.item.showValue=cfg.valuable.showValue;
-        ui::Checkbox("Distance",&cfg.valuable.showDistance);cfg.item.showDistance=cfg.valuable.showDistance;
-        ui::Checkbox("Hide extracted",&cfg.valuable.hideExtracted);
-        ui::Label("Valuable color");Color("##LootColor",cfg.valuable.color);
-        ui::Label("Item color");Color("##ItemColor",cfg.item.color);
-        {float previous=cfg.monster.maxDistance;float distance=previous;ui::SliderFloat("Maximum distance",&distance,10,500,"%.0f m",1);
-        if(distance!=previous) cfg.monster.maxDistance=cfg.player.maxDistance=cfg.valuable.maxDistance=cfg.item.maxDistance=distance;}
-        ui::Checkbox("Text background",&cfg.visual.textBackground);
-        ui::EndChild();break;
-    case 3:
-        ui::BeginChild("Fullbright",{Vec2(0,0),Vec2(3,4)});
-        ui::Checkbox("Enabled",&cfg.fullbright.enabled);
-        ui::SliderFloat("Brightness",&cfg.fullbright.brightness,.1f,3,"%.2f",.05f);
-        ui::EndChild();
-        ui::BeginChild("Crosshair",{Vec2(6,0),Vec2(3,4)});
-        ui::Checkbox("Enabled",&cfg.visual.drawCrosshair);Color("##CrosshairColor",cfg.visual.crosshairColor);
-        ui::SliderFloat("Size",&cfg.visual.crosshairSize,2,20,"%.0f px",1);
-        ui::EndChild();break;
-    case 4:
-        ui::BeginChild("Cosmetic Parser",{Vec2(0,0),Vec2(3,10)});Cosmetics(cfg);ui::EndChild();
-        ui::BeginChild("Cosmetic unlocker",{Vec2(6,0),Vec2(3,10)});Unlocks();ui::EndChild();break;
-    case 5:
-        ui::BeginChild("Camera",{Vec2(0,0),Vec2(3,10)});
-        ui::Checkbox("Third person",&cfg.thirdPerson.enabled);KeyBind("##ThirdPerson",cfg.thirdPerson.toggleKey,cfg.thirdPerson.keyMode);
-        ui::SliderFloat("Camera distance",&cfg.thirdPerson.distance,1,6,"%.1f m",.1f);
-        ui::SliderFloat("Shoulder offset",&cfg.thirdPerson.shoulderOffset,-1.5f,1.5f,"%.2f m",.05f);
-        ui::SliderFloat("Height offset",&cfg.thirdPerson.heightOffset,-.5f,1.5f,"%.2f m",.05f);
-        ui::Checkbox("Wall collision",&cfg.thirdPerson.collision);
-        if(ui::Button("Right shoulder")){cfg.thirdPerson.distance=2.5f;cfg.thirdPerson.shoulderOffset=.45f;cfg.thirdPerson.heightOffset=.2f;}
-        if(ui::Button("Left shoulder")){cfg.thirdPerson.distance=2.5f;cfg.thirdPerson.shoulderOffset=-.45f;cfg.thirdPerson.heightOffset=.2f;}
-        if(ui::Button("Centered")){cfg.thirdPerson.distance=2.8f;cfg.thirdPerson.shoulderOffset=0;cfg.thirdPerson.heightOffset=.35f;}
-        if(ui::Button("Cinematic wide")){cfg.thirdPerson.distance=4.2f;cfg.thirdPerson.shoulderOffset=.6f;cfg.thirdPerson.heightOffset=.45f;}
-        ui::EndChild();
-        ui::BeginChild("Spectator list",{Vec2(6,0),Vec2(3,10)});
-        ui::Checkbox("Enabled",&cfg.spectatorList.enabled);
-        ui::Checkbox("Show watching target",&cfg.spectatorList.showTarget);
-        ui::Checkbox("Show view mode",&cfg.spectatorList.showMode);
-        ui::Checkbox("Hide when empty",&cfg.spectatorList.hideWhenEmpty);
-        ui::Checkbox("Show spectator count",&cfg.spectatorList.showSpectatorCount);
-        ui::Label("Header");Color("##SpectatorHeader",cfg.spectatorList.colorHeader);
-        ui::Label("Spectator name");Color("##SpectatorName",cfg.spectatorList.colorSpectator);
-        ui::Label("Target: you");Color("##TargetMe",cfg.spectatorList.colorTargetMe);
-        ui::Label("Target: other");Color("##TargetOther",cfg.spectatorList.colorTargetOther);
         ui::EndChild();break;
     case 6:
         ui::BeginChild("Settings",{Vec2(0,0),Vec2(3,10)});
-        ui::Checkbox("Global voice",&cfg.troll.globalVoice);
         ui::Label("Menu key");{int key=static_cast<int>(cfg.menu.toggleKey);ui::KeyBind("##MenuKey",&key,nullptr);cfg.menu.toggleKey=key;}
         ui::Label("Menu color");ui::ColorPicker("##MenuColor",cfg.menu.color);
         if(ui::Button("Reset menu key")) cfg.menu.toggleKey=VK_DELETE;
@@ -373,17 +402,14 @@ void Menu::Render() {
         Configs();
         ui::EndChild();break;
     case 7: {
-        static int tab7Section = 0;
-        if (tab7Section == 0) {
-            auto& spawner = Features::Spawner::Get();
-            std::vector<int> filtered = spawner.GetFilteredIndices(
-                static_cast<Features::ItemCategory>(cfg.spawner.selectedCategory),
-                cfg.spawner.searchFilter
-            );
+        auto& spawner = Features::Spawner::Get();
+        std::vector<int> filtered = spawner.GetFilteredIndices(
+            static_cast<Features::ItemCategory>(cfg.spawner.selectedCategory),
+            cfg.spawner.searchFilter
+        );
 
-            ui::BeginChild("Item Catalog", {Vec2(0,0), Vec2(3,10)});
-            ui::SingleSelect("Section", &tab7Section, std::vector<const char*>{"Item Spawner", "Anti-Aim / Breakers"});
-            ui::SingleSelect("Category", &cfg.spawner.selectedCategory, std::vector<const char*>{
+        ui::BeginChild("Item Catalog", {Vec2(0,0), Vec2(3,10)});
+        ui::SingleSelect("Category", &cfg.spawner.selectedCategory, std::vector<const char*>{
                 "All Items",
                 "Weapons & Grenades",
                 "Utility & Carts",
@@ -483,43 +509,6 @@ void Menu::Render() {
                 Status(statusText);
             }
             ui::EndChild();
-        } else {
-            ui::BeginChild("Anti-Aim", {Vec2(0,0), Vec2(3,10)});
-            ui::SingleSelect("Section", &tab7Section, std::vector<const char*>{"Item Spawner", "Anti-Aim / Breakers"});
-            ui::Checkbox("Enabled", &cfg.antiAim.enabled);
-            KeyBind("##AntiAimKey", cfg.antiAim.toggleKey, cfg.antiAim.keyMode);
-            ui::SingleSelect("Yaw mode", &cfg.antiAim.yawMode, std::vector<const char*>{"Off", "Spinbot", "Jitter", "Backwards", "Sideways", "Random"});
-            if (cfg.antiAim.yawMode == 1) ui::SliderFloat("Spin speed", &cfg.antiAim.spinSpeed, 30.0f, 1440.0f, "%.0f deg/s", 10.0f);
-            if (cfg.antiAim.yawMode == 2) ui::SliderFloat("Jitter angle", &cfg.antiAim.jitterRange, 15.0f, 180.0f, "%.0f deg", 5.0f);
-            ui::SingleSelect("Pitch mode", &cfg.antiAim.pitchMode, std::vector<const char*>{"Off", "Down (Emotion)", "Up (Sky)", "Jitter", "Zero (Flat)", "Spin"});
-            ui::SingleSelect("Body lean", &cfg.antiAim.rollMode, std::vector<const char*>{"Off", "Static lean", "Jitter lean", "Spasm twitch"});
-            if (cfg.antiAim.rollMode == 1 || cfg.antiAim.rollMode == 2) ui::SliderFloat("Lean angle", &cfg.antiAim.leanAngle, -80.0f, 80.0f, "%.0f deg", 1.0f);
-            ui::EndChild();
-
-            ui::BeginChild("Animation Breakers", {Vec2(6,0), Vec2(3,10)});
-            ui::Checkbox("Enabled", &cfg.animBreaker.enabled);
-            ui::Checkbox("Moonwalk / slide glide", &cfg.animBreaker.slideWalk);
-            ui::Checkbox("Frozen legs (statue)", &cfg.animBreaker.staticLegs);
-            ui::Checkbox("Super crawl (on belly)", &cfg.animBreaker.forceCrawl);
-            ui::Checkbox("Pose spammer", &cfg.animBreaker.poseSpammer);
-            if (cfg.animBreaker.poseSpammer) ui::SliderFloat("Spam frequency", &cfg.animBreaker.poseSpamSpeed, 2.0f, 30.0f, "%.0f Hz", 1.0f);
-            ui::Checkbox("Exorcist head spin", &cfg.animBreaker.headBreaker);
-            if (cfg.animBreaker.headBreaker) ui::SliderFloat("Head spin speed", &cfg.animBreaker.headSpinSpeed, 60.0f, 1440.0f, "%.0f deg/s", 10.0f);
-            ui::Checkbox("Spine spasm (scoliosis)", &cfg.animBreaker.spineBreaker);
-            if (cfg.animBreaker.spineBreaker) ui::SliderFloat("Spasm intensity", &cfg.animBreaker.spineTwitchAmount, 10.0f, 90.0f, "%.0f deg", 5.0f);
-            if (ui::Button("Enable all breakers")) {
-                cfg.animBreaker.enabled = true;
-                cfg.animBreaker.slideWalk = true;
-                cfg.animBreaker.poseSpammer = true;
-                cfg.animBreaker.headBreaker = true;
-                cfg.animBreaker.spineBreaker = true;
-            }
-            if (ui::Button("Reset all breakers")) {
-                cfg.animBreaker = Core::AnimBreakerConfig();
-            }
-            Status("Visible to other players in multiplayer.");
-            ui::EndChild();
-        }
         break;
     }
     }

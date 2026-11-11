@@ -5,7 +5,7 @@
 #include "memory/memory.h"
 #include "unity/unity_engine.h"
 #include "mono/mono_bridge.h"
-#include "imgui/imgui.h"
+#include "ui/theme.h"
 
 namespace Features {
 
@@ -220,7 +220,9 @@ void SpectatorList::Collect(std::vector<SpectatorEntry>& m_Spectators) {
     }
 }
 
-void SpectatorList::Render() {
+void SpectatorList::Render(ImDrawList* drawList, float screenWidth, float screenHeight) {
+    if (!drawList) return;
+
     auto m_Spectators = m_Snapshot.Read();
     auto& cfg = Core::Config::Get();
     if (!cfg.spectatorList.enabled) return;
@@ -234,92 +236,58 @@ void SpectatorList::Render() {
         displayList.push_back(&s);
     }
 
-    if (cfg.spectatorList.hideWhenEmpty && displayList.empty()) {
+    if (displayList.empty()) {
         return;
     }
 
-    char windowTitle[64];
+    ImFont* font = UI::Theme::TextFont();
+    const float fontSize = font->LegacySize * 1.25f;
+
+    const float marginX = 15.0f;
+    const float marginY = 20.0f;
+    const float lineStep = fontSize + 3.0f;
+    const float right = screenWidth - marginX;
+    float y = marginY;
+
+    auto drawRight = [&](const char* text, ImU32 color) {
+        ImVec2 sz = font->CalcTextSizeA(fontSize, FLT_MAX, 0, text);
+        drawList->AddText(font, fontSize, ImVec2(right - sz.x, y), color, text);
+        y += lineStep;
+    };
+
+    const ImU32 headerColor = IM_COL32(64, 166, 255, 255);
+    const ImU32 spectatorColor = IM_COL32(242, 242, 242, 255);
+    const ImU32 targetMeColor = IM_COL32(51, 255, 89, 255);
+    const ImU32 targetOtherColor = IM_COL32(255, 217, 64, 255);
+
+    char header[64];
     if (cfg.spectatorList.showSpectatorCount) {
-        sprintf_s(windowTitle, "Spectators (%zu)###SpectatorListWindow", displayList.size());
+        sprintf_s(header, "Spectators (%zu)", displayList.size());
     } else {
-        strcpy_s(windowTitle, "Spectators###SpectatorListWindow");
+        strcpy_s(header, "Spectators");
     }
+    drawRight(header, headerColor);
 
-    ImGui::SetNextWindowPos(ImVec2(25.0f, 65.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(250.0f, 0.0f), ImGuiCond_FirstUseEver);
+    for (const auto* s : displayList) {
+        std::string line = s->spectatorName;
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.10f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(cfg.spectatorList.colorHeader[0] * 0.35f, cfg.spectatorList.colorHeader[1] * 0.35f, cfg.spectatorList.colorHeader[2] * 0.35f, 0.95f));
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(cfg.spectatorList.colorHeader[0] * 0.55f, cfg.spectatorList.colorHeader[1] * 0.55f, cfg.spectatorList.colorHeader[2] * 0.55f, 1.0f));
-
-    if (ImGui::Begin(windowTitle, &cfg.spectatorList.enabled, flags)) {
-        if (displayList.empty()) {
-            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.65f, 0.8f), "No spectators active");
-        } else {
-            int columns = 1;
-            if (cfg.spectatorList.showTarget) columns++;
-            if (cfg.spectatorList.showMode) columns++;
-
-            if (ImGui::BeginTable("##SpectatorTable", columns, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX)) {
-                ImGui::TableSetupColumn("Spectator");
-                if (cfg.spectatorList.showTarget) {
-                    ImGui::TableSetupColumn("Target");
-                }
-                if (cfg.spectatorList.showMode) {
-                    ImGui::TableSetupColumn("Mode");
-                }
-
-                for (const auto* s : displayList) {
-                    ImGui::TableNextRow();
-
-                    ImGui::TableNextColumn();
-                    if (s->isSpectatingMe) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.25f, 1.0f), "[!]");
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(cfg.spectatorList.colorSpectator[0], cfg.spectatorList.colorSpectator[1], cfg.spectatorList.colorSpectator[2], 1.0f), "%s", s->spectatorName.c_str());
-                    } else if (s->isLocalSpectator) {
-                        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", s->spectatorName.c_str());
-                    } else {
-                        ImGui::TextColored(ImVec4(cfg.spectatorList.colorSpectator[0], cfg.spectatorList.colorSpectator[1], cfg.spectatorList.colorSpectator[2], 1.0f), "%s", s->spectatorName.c_str());
-                    }
-
-                    if (cfg.spectatorList.showTarget) {
-                        ImGui::TableNextColumn();
-                        if (s->isSpectatingMe) {
-                            ImGui::TextColored(ImVec4(cfg.spectatorList.colorTargetMe[0], cfg.spectatorList.colorTargetMe[1], cfg.spectatorList.colorTargetMe[2], 1.0f), "-> YOU");
-                        } else if (s->targetName == "-") {
-                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "-");
-                        } else {
-                            ImGui::TextColored(ImVec4(cfg.spectatorList.colorTargetOther[0], cfg.spectatorList.colorTargetOther[1], cfg.spectatorList.colorTargetOther[2], 1.0f), "-> %s", s->targetName.c_str());
-                        }
-                    }
-
-                    if (cfg.spectatorList.showMode) {
-                        ImGui::TableNextColumn();
-                        ImVec4 modeColor = ImVec4(0.6f, 0.6f, 0.6f, 0.8f);
-                        if (s->modeStr == "3rd Person") {
-                            modeColor = ImVec4(0.2f, 0.85f, 1.0f, 0.95f);
-                        } else if (s->modeStr == "Head Cam") {
-                            modeColor = ImVec4(1.0f, 0.65f, 0.2f, 0.95f);
-                        } else if (s->modeStr == "Death Cam") {
-                            modeColor = ImVec4(0.85f, 0.35f, 0.35f, 0.95f);
-                        }
-
-                        ImGui::TextColored(modeColor, "[%s]", s->modeStr.c_str());
-                    }
-                }
-                ImGui::EndTable();
+        if (cfg.spectatorList.showTarget) {
+            if (s->isSpectatingMe) {
+                line += " -> YOU";
+            } else {
+                line += " -> ";
+                line += s->targetName;
             }
         }
-    }
-    ImGui::End();
 
-    ImGui::PopStyleColor(3);
-    ImGui::PopStyleVar(2);
+        if (cfg.spectatorList.showMode) {
+            line += " [";
+            line += s->modeStr;
+            line += "]";
+        }
+
+        drawRight(line.c_str(), s->isSpectatingMe ? targetMeColor : (s->isLocalSpectator ? targetOtherColor : spectatorColor));
+    }
 }
 
 }

@@ -366,6 +366,15 @@ bool GameState::Initialize() {
         }
     }
 
+    if (klassPlayerVoiceChat) {
+        methodPlayerVoiceChatSetSpatialAudio = bridge.FindMethod(klassPlayerVoiceChat, "SetSpatialAudio", 1);
+        if (methodPlayerVoiceChatSetSpatialAudio) {
+            LOG_OK("Method [PlayerVoiceChat::SetSpatialAudio] -> %p", methodPlayerVoiceChatSetSpatialAudio);
+        } else {
+            LOG_WARN("Method [PlayerVoiceChat::SetSpatialAudio] not found!");
+        }
+    }
+
     if (klassPlayerAvatar) {
         methodOverrideAnimationSpeed = bridge.FindMethod(klassPlayerAvatar, "OverrideAnimationSpeed", 4);
         methodPlayerAvatarRevive = bridge.FindMethod(klassPlayerAvatar, "Revive", 1);
@@ -430,12 +439,36 @@ bool GameState::Initialize() {
     auto compileMethod = reinterpret_cast<void* (*)(MonoMethod*)>(GetProcAddress(
         GetModuleHandleA("mono-2.0-bdwgc.dll") ? GetModuleHandleA("mono-2.0-bdwgc.dll")
             : GetModuleHandleA("mono.dll"), "mono_compile_method"));
+    if (!compileMethod) LOG_ERR("mono_compile_method export not found");
     MonoMethod* update = bridge.FindMethod(klassGameDirector, "Update", 0);
+    if (!update) LOG_ERR("Method [GameDirector::Update] not found");
     void* updateCode = compileMethod && update ? compileMethod(update) : nullptr;
-    if (updateCode && MH_CreateHook(updateCode, &PlayerUpdateHook,
-        reinterpret_cast<void**>(&originalPlayerUpdate)) == MH_OK) {
-        appearanceHookReady = MH_EnableHook(updateCode) == MH_OK;
-        if (!appearanceHookReady) MH_RemoveHook(updateCode);
+    if (update && compileMethod && !updateCode) LOG_ERR("mono_compile_method returned null for GameDirector::Update");
+
+    for (int attempt = 0; !appearanceHookReady && attempt < 10; ++attempt) {
+        if (attempt > 0) {
+            if (updateCode) MH_RemoveHook(updateCode);
+            originalPlayerUpdate = nullptr;
+            Sleep(300);
+            updateCode = compileMethod && update ? compileMethod(update) : nullptr;
+        }
+        if (!updateCode) continue;
+
+        MH_STATUS createStatus = MH_CreateHook(updateCode, &PlayerUpdateHook,
+            reinterpret_cast<void**>(&originalPlayerUpdate));
+        if (createStatus != MH_OK) {
+            LOG_WARN("MH_CreateHook(GameDirector::Update) attempt %d failed: %s", attempt + 1, MH_StatusToString(createStatus));
+            continue;
+        }
+
+        MH_STATUS enableStatus = MH_EnableHook(updateCode);
+        if (enableStatus != MH_OK) {
+            LOG_WARN("MH_EnableHook(GameDirector::Update) attempt %d failed: %s", attempt + 1, MH_StatusToString(enableStatus));
+            MH_RemoveHook(updateCode);
+            originalPlayerUpdate = nullptr;
+            continue;
+        }
+        appearanceHookReady = true;
     }
     if (!appearanceHookReady) {
         LOG_ERR("Game-thread Update hook failed; gameplay features disabled");

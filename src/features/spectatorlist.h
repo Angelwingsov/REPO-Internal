@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <string>
 #include <vector>
+#include "imgui/imgui.h"
 #include "unity/unity_math.h"
 #include "core/snapshot.h"
 
@@ -20,7 +21,7 @@ public:
     static SpectatorList& Get();
 
     void Update();
-    void Render();
+    void Render(ImDrawList* drawList, float screenWidth, float screenHeight);
 
     std::vector<SpectatorEntry> GetSpectators() const { return m_Snapshot.Read(); }
     size_t GetCount() const { return m_Snapshot.Read().size(); }

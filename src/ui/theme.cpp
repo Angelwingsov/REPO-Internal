@@ -58,7 +58,7 @@ void Theme::InitializeAssets(ID3D11Device* device) {
         return io.Fonts->AddFontFromMemoryTTF(const_cast<void*>(font), static_cast<int>(bytes), fontSize, &cfg);
     };
     iconFont = embeddedFont(202, 47);
-    legitIconFont = embeddedFont(203, 32);
+    legitIconFont = embeddedFont(203, 23);
     smallFont = embeddedFont(204, 8);
     DWORD size = 0;
     if (!device) return;

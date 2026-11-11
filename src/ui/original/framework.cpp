@@ -539,12 +539,15 @@ void ui::HandleMoving(GuiWindow* Window, Rect Boundaries, Vec2* buffer) {
 	}
 	else if ((Window->Flags & GuiFlags_ChildWindow) && buffer) {
 		static Vec2 ClickPos;
+		static int StartPosX, StartPosY;
 
 		Vec2 MinSize = Vec2((Boundaries.Max.x - 2.f) * (22.4f / 100.f), (Boundaries.Max.y - 2.f) * (13.4f / 100.f));
 		Vec2 Step = Vec2((Boundaries.Max.x - MinSize.x - 2.f) / 9, (Boundaries.Max.y - MinSize.y - 2) / 10);
 
 		if (IsInside(Window->Pos.x, Window->Pos.y, Window->Size.x, 17) && KeyDown(VK_LBUTTON) && !Window->Dragging && !Window->Resizing && !Window->ParentWindow->Resizing && !Window->ParentWindow->Dragging && ui::ChildsAreStable(Window->ParentWindow) && NoItemsActive(Window)) {
 			ClickPos.x = g.MousePos.x - Window->Pos.x;
+			StartPosX = Window->xPos;
+			StartPosY = Window->yPos;
 			Window->Dragging = true;
 		}
 
@@ -556,8 +559,35 @@ void ui::HandleMoving(GuiWindow* Window, Rect Boundaries, Vec2* buffer) {
 			Window->yPos = std::clamp(Window->yPos, strstr(Window->Name.c_str(), "#Legit") ? 2 : 0, 10 - Window->ySize);
 		}
 
-		else if (!KeyDown(VK_LBUTTON) && Window->Dragging)
+		else if (!KeyDown(VK_LBUTTON) && Window->Dragging) {
 			Window->Dragging = false;
+
+			if (Window->xPos != StartPosX || Window->yPos != StartPosY) {
+				GuiWindow* target = NULL;
+				float best = 1e9f;
+				for (GuiWindow* other : g.VisibleChildren) {
+					if (!other || other == Window || other->ParentWindow != Window->ParentWindow)
+						continue;
+					if (Window->xPos >= other->xPos + other->xSize || other->xPos >= Window->xPos + Window->xSize)
+						continue;
+					if (Window->yPos >= other->yPos + other->ySize || other->yPos >= Window->yPos + Window->ySize)
+						continue;
+					float dx = (Window->xPos + Window->xSize / 2.f) - (other->xPos + other->xSize / 2.f);
+					float dy = (Window->yPos + Window->ySize / 2.f) - (other->yPos + other->ySize / 2.f);
+					float dist = dx * dx + dy * dy;
+					if (dist < best) { best = dist; target = other; }
+				}
+
+				if (target) {
+					std::swap(Window->xPos, target->xPos);
+					std::swap(Window->yPos, target->yPos);
+					std::swap(Window->xSize, target->xSize);
+					std::swap(Window->ySize, target->ySize);
+					target->xPos = std::clamp(target->xPos, 0, 9 - target->xSize);
+					target->yPos = std::clamp(target->yPos, strstr(target->Name.c_str(), "#Legit") ? 2 : 0, 10 - target->ySize);
+				}
+			}
+		}
 
 		buffer->x += Window->xPos * Step.x;
 		buffer->y += Window->yPos * Step.y;
@@ -608,6 +638,8 @@ void ui::HandleResize(GuiWindow* Window, Rect Boundaries, Vec2* buffer) {
 void ui::Begin(const char* Name, GuiFlags flags) {
 	GuiContext& g = *Gui_Ctx;
 	static Vec2 size_on_first_use;
+	if (!(flags & (GuiFlags_ChildWindow | GuiFlags_PopUp | GuiFlags_Listbox | GuiFlags_ComboBox | GuiFlags_ColorPicker)))
+		g.VisibleChildren.clear();
 	GuiWindow* Window = FindWindowByName(Name);
 
 	if (Window == NULL) {
@@ -772,6 +804,7 @@ void ui::BeginChild(const char* Name, Rect X, GuiFlags flags) {
 
 	GuiWindow* child_window = GetCurrentWindow();
 	child_window->ParentWindow = parent_window;
+	g.VisibleChildren.push_back(child_window);
 
 	RECT ClipRect = { (LONG)child_window->Pos.x, (LONG)child_window->Pos.y + 4, LONG(child_window->Pos.x + child_window->Size.x - 15), LONG(child_window->Pos.y + child_window->Size.y - 3) };
 
@@ -894,6 +927,36 @@ void ui::TabButton(const char* label, int* selected, int num, int total, GuiFlag
 		Render::Draw->Text(label, DrawPos.x, DrawPos.y, LEFT, Render::Fonts::LegitTabIcons, false, textColor);
 	else
 		Render::Draw->Text(label, DrawPos.x + Size.x / 2 - label_size.x / 2, DrawPos.y + Size.y / 2 - label_size.y / 2 - 1, LEFT, Render::Fonts::TabIcons, false, textColor);
+}
+
+void ui::SubTabs(int* selected, const std::vector<const char*>& icons) {
+	GuiContext& g = *Gui_Ctx;
+	GuiWindow* Window = GetCurrentWindow();
+	if (icons.empty() || !Window) return;
+
+	const int tabCount = static_cast<int>(icons.size());
+	const float tabHeight = 32.0f;
+	const float startY = Window->Pos.y + (Window->Size.y - tabHeight) * 0.5f;
+	float itemX = Window->Pos.x + 16.0f;
+
+	for (int i = 0; i < tabCount; ++i) {
+		const float width = 48.0f;
+		const Rect bounds{ Vec2(itemX, startY), Vec2(width, tabHeight) };
+		bool hovered = false, held = false;
+		if (ButtonBehavior(Window, icons[i], bounds, hovered, held, GuiFlags_TabButton) &&
+			!Window->Resizing && *selected != i) {
+			*selected = i;
+		}
+
+		const int shade = *selected == i ? 220 : (hovered ? 150 : 75);
+		Render::Draw->Text(icons[i], itemX + width * 0.5f, startY + tabHeight * 0.5f,
+			CENTER, Render::Fonts::LegitTabIcons, false, D3DCOLOR_RGBA(shade, shade, shade, g.MenuAlpha));
+
+		itemX += width;
+	}
+
+	Window->CursorPos = Window->Pos + Vec2(22.0f, 26.0f);
+	Window->ScrollRatio = -1.0f;
 }
 
 bool ui::Checkbox(const char* label, bool* v, bool special) {
