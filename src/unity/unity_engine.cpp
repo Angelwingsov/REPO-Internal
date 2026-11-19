@@ -2,6 +2,7 @@
 #include "game/player_bounds.h"
 #include "core/logger.h"
 #include "game/state.h"
+#include "hook/input.h"
 
 namespace Unity {
 
@@ -746,6 +747,26 @@ std::string Engine::GetObjectName(MonoObject* obj) {
     return s;
 }
 
+bool Engine::HasComponent(MonoObject* obj, MonoClass* klass) {
+    if (!obj || !IsValidUnityObject(obj) || !klass || !m_methodGetComponentsInternal) return false;
+    auto& bridge = Mono::Bridge::Get();
+    MonoObject* type = bridge.GetReflectionType(klass);
+    if (!type) return false;
+    Mono::PinnedObject typePin(type);
+    if (!typePin) return false;
+    int typedArray = 1, recursive = 1, inactive = 1, reverse = 0;
+    void* args[] = { type, &typedArray, &recursive, &inactive, &reverse, nullptr };
+    MonoObject* exception = nullptr;
+    MonoObject* result = bridge.InvokeMethod(m_methodGetComponentsInternal, obj, args, &exception);
+    if (!result || exception) return false;
+    Mono::PinnedObject arrayPin(result);
+    if (!arrayPin) return false;
+    uintptr_t length = 0;
+    uintptr_t array = reinterpret_cast<uintptr_t>(result);
+    if (!Memory::ReadPtr(array + sizeof(void*) * 3, length) || length == 0) return false;
+    return true;
+}
+
 MonoObject* Engine::FindActiveCamera(const char** outSourceName) {
     auto& gameState = Game::GameState::Get();
 
@@ -916,6 +937,12 @@ void Engine::UpdateCursorState(bool menuVisible) {
             m_SavedCursorVisible = GetCursorVisible();
             m_MenuWasVisible = true;
             LOG_INFO("Menu opened: saved cursor state (lockState=%d, visible=%d)", m_SavedLockState, m_SavedCursorVisible);
+
+            HWND hWnd = Hook::InputHook::s_Window.load();
+            WNDPROC orig = Hook::InputHook::s_OriginalWndProc;
+            if (hWnd && orig) {
+                Hook::InputHook::ReleaseAllKeys(hWnd, orig);
+            }
         }
 
         SetCursorLockState(0);

@@ -70,62 +70,6 @@ PlayerMods& PlayerMods::Get() {
     return instance;
 }
 
-const char* PlayerMods::GetKeyName(int vkCode) {
-    switch (vkCode) {
-    case 0: return "NONE";
-    case VK_LBUTTON: return "M1";
-    case VK_RBUTTON: return "M2";
-    case VK_MBUTTON: return "M3 (Wheel)";
-    case VK_XBUTTON1: return "M4";
-    case VK_XBUTTON2: return "M5";
-    case VK_MWHEELUP: return "MWheelUp";
-    case VK_MWHEELDOWN: return "MWheelDown";
-    case VK_SHIFT:
-    case VK_LSHIFT: return "LSHIFT";
-    case VK_RSHIFT: return "RSHIFT";
-    case VK_CONTROL:
-    case VK_LCONTROL: return "LCTRL";
-    case VK_RCONTROL: return "RCTRL";
-    case VK_MENU:
-    case VK_LMENU: return "LALT";
-    case VK_RMENU: return "RALT";
-    case VK_SPACE: return "SPACE";
-    case VK_TAB: return "TAB";
-    case VK_CAPITAL: return "CAPS";
-    case VK_ESCAPE: return "ESC";
-    case VK_DELETE: return "DELETE";
-    case VK_INSERT: return "INSERT";
-    case VK_HOME: return "HOME";
-    case VK_END: return "END";
-    case VK_PRIOR: return "PGUP";
-    case VK_NEXT: return "PGDN";
-    case VK_F1: return "F1";
-    case VK_F2: return "F2";
-    case VK_F3: return "F3";
-    case VK_F4: return "F4";
-    case VK_F5: return "F5";
-    case VK_F6: return "F6";
-    case VK_F7: return "F7";
-    case VK_F8: return "F8";
-    case VK_F9: return "F9";
-    case VK_F10: return "F10";
-    case VK_F11: return "F11";
-    case VK_F12: return "F12";
-    default: {
-        static char bufs[4][16];
-        static int bufIdx = 0;
-        char* cur = bufs[bufIdx++ % 4];
-        if ((vkCode >= 'A' && vkCode <= 'Z') || (vkCode >= '0' && vkCode <= '9')) {
-            cur[0] = static_cast<char>(vkCode);
-            cur[1] = '\0';
-            return cur;
-        }
-        sprintf_s(cur, 16, "Key %d", vkCode);
-        return cur;
-    }
-    }
-}
-
 void PlayerMods::Update() {
     auto& gameState = Game::GameState::Get();
     if (!gameState.IsReady() || gameState.IsMapLoadingOrRestarting()) {
@@ -162,9 +106,43 @@ void PlayerMods::Update() {
 
     cfg.movement.speedActive = shouldBeActive;
 
+    if (gameState.klassInputManager) {
+        uintptr_t inputMgr = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassInputManager, "instance"));
+        if (inputMgr && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(inputMgr))) {
+            static bool s_PrevMenuVisibleInput = false;
+            if (cfg.menu.isVisible != s_PrevMenuVisibleInput) {
+                s_PrevMenuVisibleInput = cfg.menu.isVisible;
+                if (gameState.methodInputManagerResetInput) {
+                    Mono::Bridge::Get().TryInvokeMethod(gameState.methodInputManagerResetInput, reinterpret_cast<void*>(inputMgr));
+                }
+            }
+            if (cfg.menu.isVisible) {
+                if (gameState.offsets.InputManager_disableMovementTimer > 0) {
+                    Memory::WriteFloat(inputMgr + gameState.offsets.InputManager_disableMovementTimer, 0.15f);
+                }
+                if (gameState.offsets.InputManager_disableAimingTimer > 0) {
+                    Memory::WriteFloat(inputMgr + gameState.offsets.InputManager_disableAimingTimer, 0.15f);
+                }
+            }
+        }
+    }
+
     if (gameState.klassPlayerController) {
         uintptr_t playerCtrl = reinterpret_cast<uintptr_t>(Mono::Bridge::Get().GetStaticFieldValue(gameState.klassPlayerController, "instance"));
         if (playerCtrl && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(playerCtrl))) {
+            if (cfg.menu.isVisible) {
+                if (gameState.offsets.PlayerController_InputDisableTimer > 0) {
+                    Memory::WriteFloat(playerCtrl + gameState.offsets.PlayerController_InputDisableTimer, 0.15f);
+                }
+                if (gameState.offsets.PlayerController_InputDirection > 0) {
+                    Unity::Vector3 zeroVec{ 0.0f, 0.0f, 0.0f };
+                    Memory::Write<Unity::Vector3>(playerCtrl + gameState.offsets.PlayerController_InputDirection, zeroVec);
+                }
+                if (gameState.offsets.PlayerController_InputDirectionRaw > 0) {
+                    Unity::Vector3 zeroVec{ 0.0f, 0.0f, 0.0f };
+                    Memory::Write<Unity::Vector3>(playerCtrl + gameState.offsets.PlayerController_InputDirectionRaw, zeroVec);
+                }
+            }
             if (m_LastPlayerCtrl != playerCtrl) {
                 m_LastPlayerCtrl = playerCtrl;
                 m_JumpForceSaved = false;
@@ -408,11 +386,20 @@ void PlayerMods::Update() {
                         uint64_t now = GetTickCount64();
                         if (m_LastVoiceChat != voiceChat || !m_GlobalVoiceApplied || now - m_LastVoiceApplyMs > 2000) {
                             if (gameState.methodPlayerVoiceChatSetSpatialAudio) {
-                                int32_t spatialOff = 0;
-                                void* args[] = { &spatialOff };
-                                if (Mono::Bridge::Get().TryInvokeMethod(gameState.methodPlayerVoiceChatSetSpatialAudio,
-                                    reinterpret_cast<void*>(voiceChat), args)) {
-                                    m_GlobalVoiceApplied = true;
+                                if (gameState.isVoiceSpatialDisable) {
+                                    float disableTime = 2.0f;
+                                    void* args[] = { &disableTime };
+                                    if (Mono::Bridge::Get().TryInvokeMethod(gameState.methodPlayerVoiceChatSetSpatialAudio,
+                                        reinterpret_cast<void*>(voiceChat), args)) {
+                                        m_GlobalVoiceApplied = true;
+                                    }
+                                } else {
+                                    int32_t spatialOff = 0;
+                                    void* args[] = { &spatialOff };
+                                    if (Mono::Bridge::Get().TryInvokeMethod(gameState.methodPlayerVoiceChatSetSpatialAudio,
+                                        reinterpret_cast<void*>(voiceChat), args)) {
+                                        m_GlobalVoiceApplied = true;
+                                    }
                                 }
                             }
                             m_LastVoiceChat = voiceChat;
@@ -421,12 +408,15 @@ void PlayerMods::Update() {
                     }
                 } else if (m_GlobalVoiceApplied) {
                   
-                    if (m_LastVoiceChat && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(m_LastVoiceChat))
-                        && gameState.methodPlayerVoiceChatSetSpatialAudio) {
-                        int32_t spatialOn = 1;
-                        void* args[] = { &spatialOn };
-                        Mono::Bridge::Get().TryInvokeMethod(gameState.methodPlayerVoiceChatSetSpatialAudio,
-                            reinterpret_cast<void*>(m_LastVoiceChat), args);
+                    if (m_LastVoiceChat && Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(m_LastVoiceChat))) {
+                        if (gameState.methodPlayerVoiceChatSetSpatialAudio && !gameState.isVoiceSpatialDisable) {
+                            int32_t spatialOn = 1;
+                            void* args[] = { &spatialOn };
+                            Mono::Bridge::Get().TryInvokeMethod(gameState.methodPlayerVoiceChatSetSpatialAudio,
+                                reinterpret_cast<void*>(m_LastVoiceChat), args);
+                        } else if (gameState.isVoiceSpatialDisable) {
+                            Memory::WriteFloat(m_LastVoiceChat + gameState.offsets.PlayerVoiceChat_SpatialDisableTimer, 0.0f);
+                        }
                     }
                     m_GlobalVoiceApplied = false;
                     m_LastVoiceChat = 0;

@@ -22,6 +22,7 @@ public:
     static bool IsKeyHeld(int vkCode);
     static bool ConsumeWheelUp();
     static bool ConsumeWheelDown();
+    static void ReleaseAllKeys(HWND hWnd, WNDPROC originalProc);
 
     static inline std::atomic<HWND> s_Window{nullptr};
     static inline WNDPROC s_OriginalWndProc = nullptr;

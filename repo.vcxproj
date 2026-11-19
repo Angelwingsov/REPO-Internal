@@ -283,8 +283,6 @@
     <ClInclude Include="src\ui\original\framework.h" />
     <ClInclude Include="src\ui\original\renderer.h" />
     <ClInclude Include="src\ui\original\platform.h" />
-    <ClInclude Include="src\ui\original\color.h" />
-    <ClInclude Include="src\ui\original\bridge.h" />
     <ClInclude Include="src\unity\unity_engine.h" />
     <ClInclude Include="src\unity\unity_math.h" />
     <ClInclude Include="imgui\imconfig.h" />

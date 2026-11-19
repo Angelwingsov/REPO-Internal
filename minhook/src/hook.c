@@ -63,15 +63,17 @@ typedef struct _HOOK_ENTRY
     LPVOID pTarget;             // Address of the target function.
     LPVOID pDetour;             // Address of the detour or relay function.
     LPVOID pTrampoline;         // Address of the trampoline function.
-    UINT8  backup[8];           // Original prologue of the target function.
+    UINT8  backup[24];          // Original prologue of the target function.
+    UINT8  patchSize;
 
     UINT8  patchAbove  : 1;     // Uses the hot patch area.
     UINT8  isEnabled   : 1;     // Enabled.
     UINT8  queueEnable : 1;     // Queued for enabling/disabling when != isEnabled.
+    UINT8  isAbsolute  : 1;
 
-    UINT   nIP : 4;             // Count of the instruction boundaries.
-    UINT8  oldIPs[8];           // Instruction boundaries of the target function.
-    UINT8  newIPs[8];           // Instruction boundaries of the trampoline function.
+    UINT   nIP;                 // Count of the instruction boundaries.
+    UINT8  oldIPs[16];          // Instruction boundaries of the target function.
+    UINT8  newIPs[16];          // Instruction boundaries of the trampoline function.
 } HOOK_ENTRY, *PHOOK_ENTRY;
 
 // Suspended threads for Freeze()/Unfreeze().
@@ -394,7 +396,7 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
 {
     PHOOK_ENTRY pHook = &g_hooks.pItems[pos];
     DWORD  oldProtect;
-    SIZE_T patchSize    = sizeof(JMP_REL);
+    SIZE_T patchSize    = pHook->patchSize ? pHook->patchSize : sizeof(JMP_REL);
     LPBYTE pPatchTarget = (LPBYTE)pHook->pTarget;
 
     if (pHook->patchAbove)
@@ -408,15 +410,30 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
 
     if (enable)
     {
-        PJMP_REL pJmp = (PJMP_REL)pPatchTarget;
-        pJmp->opcode = 0xE9;
-        pJmp->operand = (INT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
-
-        if (pHook->patchAbove)
+#if defined(_M_X64) || defined(__x86_64__)
+        if (pHook->isAbsolute)
         {
-            PJMP_REL_SHORT pShortJmp = (PJMP_REL_SHORT)pHook->pTarget;
-            pShortJmp->opcode = 0xEB;
-            pShortJmp->operand = (INT8)(0 - (sizeof(JMP_REL_SHORT) + sizeof(JMP_REL)));
+            PJMP_ABS pJmp = (PJMP_ABS)pPatchTarget;
+            pJmp->opcode0 = 0xFF;
+            pJmp->opcode1 = 0x25;
+            pJmp->dummy   = 0x00000000;
+            pJmp->address = (UINT64)pHook->pDetour;
+            for (SIZE_T i = sizeof(JMP_ABS); i < patchSize; ++i)
+                pPatchTarget[i] = 0x90;
+        }
+        else
+#endif
+        {
+            PJMP_REL pJmp = (PJMP_REL)pPatchTarget;
+            pJmp->opcode = 0xE9;
+            pJmp->operand = (INT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
+
+            if (pHook->patchAbove)
+            {
+                PJMP_REL_SHORT pShortJmp = (PJMP_REL_SHORT)pHook->pTarget;
+                pShortJmp->opcode = 0xEB;
+                pShortJmp->operand = (INT8)(0 - (sizeof(JMP_REL_SHORT) + sizeof(JMP_REL)));
+            }
         }
     }
     else
@@ -424,7 +441,7 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
         if (pHook->patchAbove)
             memcpy(pPatchTarget, pHook->backup, sizeof(JMP_REL) + sizeof(JMP_REL_SHORT));
         else
-            memcpy(pPatchTarget, pHook->backup, sizeof(JMP_REL));
+            memcpy(pPatchTarget, pHook->backup, patchSize);
     }
 
     VirtualProtect(pPatchTarget, patchSize, oldProtect, &oldProtect);
@@ -589,7 +606,16 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
             UINT pos = FindHookEntry(pTarget);
             if (pos == INVALID_HOOK_POS)
             {
+                BOOL isAbsolute = FALSE;
                 LPVOID pBuffer = AllocateBuffer(pTarget);
+#if defined(_M_X64) || defined(__x86_64__)
+                if (pBuffer == NULL)
+                {
+                    pBuffer = AllocateBufferAnywhere();
+                    if (pBuffer != NULL)
+                        isAbsolute = TRUE;
+                }
+#endif
                 if (pBuffer != NULL)
                 {
                     TRAMPOLINE ct;
@@ -597,6 +623,10 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
                     ct.pTarget     = pTarget;
                     ct.pDetour     = pDetour;
                     ct.pTrampoline = pBuffer;
+#if defined(_M_X64) || defined(__x86_64__)
+                    ct.isAbsolute  = isAbsolute;
+                    ct.patchSize   = 0;
+#endif
                     if (CreateTrampolineFunction(&ct))
                     {
                         PHOOK_ENTRY pHook = AddHookEntry();
@@ -605,16 +635,19 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
                             pHook->pTarget     = ct.pTarget;
 #if defined(_M_X64) || defined(__x86_64__)
                             pHook->pDetour     = ct.pRelay;
+                            pHook->isAbsolute  = isAbsolute;
+                            pHook->patchSize   = ct.patchSize ? ct.patchSize : (UINT8)sizeof(JMP_REL);
 #else
                             pHook->pDetour     = ct.pDetour;
+                            pHook->patchSize   = (UINT8)sizeof(JMP_REL);
 #endif
                             pHook->pTrampoline = ct.pTrampoline;
                             pHook->patchAbove  = ct.patchAbove;
                             pHook->isEnabled   = FALSE;
                             pHook->queueEnable = FALSE;
                             pHook->nIP         = ct.nIP;
-                            memcpy(pHook->oldIPs, ct.oldIPs, ARRAYSIZE(ct.oldIPs));
-                            memcpy(pHook->newIPs, ct.newIPs, ARRAYSIZE(ct.newIPs));
+                            memcpy(pHook->oldIPs, ct.oldIPs, sizeof(ct.oldIPs));
+                            memcpy(pHook->newIPs, ct.newIPs, sizeof(ct.newIPs));
 
                             // Back up the target function.
 
@@ -627,7 +660,7 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
                             }
                             else
                             {
-                                memcpy(pHook->backup, pTarget, sizeof(JMP_REL));
+                                memcpy(pHook->backup, pTarget, pHook->patchSize);
                             }
 
                             if (ppOriginal != NULL)

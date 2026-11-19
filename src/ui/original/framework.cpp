@@ -1,8 +1,7 @@
 #include "framework.h"
 #include "renderer.h"
-#include "color.h"
-#include "bridge.h"
 #include <chrono>
+#include <unordered_map>
 #include "core/config.h"
 #include <iostream>
 
@@ -11,174 +10,110 @@
 using namespace IdaLovesMe;
 using namespace Globals;
 
-const char* keys[] = {
-"[-]",
-"[M1]",
-"[M2]",
-"[CN]",
-"[M3]",
-"[M4]",
-"[M5]",
-"[-]",
-"[BCK]",
-"[TAB]",
-"[-]",
-"[-]",
-"[CLR]",
-"[RET]",
-"[-]",
-"[-]",
-"[SHI]",
-"[CTR]",
-"[ALT]",
-"[PAU]",
-"[CAP]",
-"[KAN]",
-"[-]",
-"[JUN]",
-"[FIN]",
-"[KAN]",
-"[-]",
-"[ESC]",
-"[CON]",
-"[NCO]",
-"[ACC]",
-"[MAD]",
-"[SPA]",
-"[PGU]",
-"[PGD]",
-"[END]",
-"[HOM]",
-"[LEF]",
-"[UP]",
-"[RIG]",
-"[DOW]",
-"[SEL]",
-"[PRI]",
-"[EXE]",
-"[PRI]",
-"[INS]",
-"[DEL]",
-"[HEL]",
-"[0]",
-"[1]",
-"[2]",
-"[3]",
-"[4]",
-"[5]",
-"[6]",
-"[7]",
-"[8]",
-"[9]",
-"[0]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[A]",
-"[B]",
-"[C]",
-"[D]",
-"[E]",
-"[F]",
-"[G]",
-"[H]",
-"[I]",
-"[J]",
-"[K]",
-"[L]",
-"[M]",
-"[N]",
-"[O]",
-"[P]",
-"[Q]",
-"[R]",
-"[S]",
-"[T]",
-"[U]",
-"[V]",
-"[W]",
-"[X]",
-"[Y]",
-"[Z]",
-"[WIN]",
-"[WIN]",
-"[5D]",
-"[-]",
-"[SLE]",
-"[KP0]",
-"[KP1]",
-"[KP2]",
-"[KP3]",
-"[KP4]",
-"[KP5]",
-"[KP6]",
-"[KP7]",
-"[KP8]",
-"[KP9]",
-"[KP*]",
-"[KP+]",
-"[SEP]",
-"[KP-]",
-"[KP.]",
-"[KP/]",
-"[F1]",
-"[F2]",
-"[F3]",
-"[F4]",
-"[F5]",
-"[F6]",
-"[F7]",
-"[F8]",
-"[F9]",
-"[F10]",
-"[F11]",
-"[F12]",
-"[F13]",
-"[F14]",
-"[F15]",
-"[F16]",
-"[F17]",
-"[F18]",
-"[F19]",
-"[F20]",
-"[F21]",
-"[F22]",
-"[F23]",
-"[F24]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[NUM]",
-"[SCR]",
-"[EQU]",
-"[MAS]",
-"[TOY]",
-"[OYA]",
-"[OYA]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[-]",
-"[SHI]",
-"[SHI]",
-"[CTR]",
-"[CTR]",
-"[ALT]",
-"[ALT]"
-};
+static inline D3DCOLOR GetMenuColor() {
+	const auto& col = Core::Config::Get().menu.color;
+	int alpha = Globals::Gui_Ctx ? Globals::Gui_Ctx->MenuAlpha : 255;
+	return D3DCOLOR_RGBA(col[0], col[1], col[2], std::min(255, alpha));
+}
+
+static const char* GetKeyName(int vk) {
+	if (vk <= 0 || vk > 255)
+		return "[-]";
+
+	static const std::unordered_map<int, const char*> keyMap = {
+		{ VK_LBUTTON, "[M1]" },
+		{ VK_RBUTTON, "[M2]" },
+		{ VK_CANCEL, "[CN]" },
+		{ VK_MBUTTON, "[M3]" },
+		{ VK_XBUTTON1, "[M4]" },
+		{ VK_XBUTTON2, "[M5]" },
+		{ VK_BACK, "[BCK]" },
+		{ VK_TAB, "[TAB]" },
+		{ VK_CLEAR, "[CLR]" },
+		{ VK_RETURN, "[RET]" },
+		{ VK_SHIFT, "[SHI]" },
+		{ VK_CONTROL, "[CTR]" },
+		{ VK_MENU, "[ALT]" },
+		{ VK_PAUSE, "[PAU]" },
+		{ VK_CAPITAL, "[CAP]" },
+		{ VK_ESCAPE, "[ESC]" },
+		{ VK_SPACE, "[SPA]" },
+		{ VK_PRIOR, "[PGU]" },
+		{ VK_NEXT, "[PGD]" },
+		{ VK_END, "[END]" },
+		{ VK_HOME, "[HOM]" },
+		{ VK_LEFT, "[LEF]" },
+		{ VK_UP, "[UP]" },
+		{ VK_RIGHT, "[RIG]" },
+		{ VK_DOWN, "[DOW]" },
+		{ VK_SELECT, "[SEL]" },
+		{ VK_PRINT, "[PRI]" },
+		{ VK_EXECUTE, "[EXE]" },
+		{ VK_SNAPSHOT, "[PRT]" },
+		{ VK_INSERT, "[INS]" },
+		{ VK_DELETE, "[DEL]" },
+		{ VK_HELP, "[HEL]" },
+		{ '0', "[0]" }, { '1', "[1]" }, { '2', "[2]" }, { '3', "[3]" }, { '4', "[4]" },
+		{ '5', "[5]" }, { '6', "[6]" }, { '7', "[7]" }, { '8', "[8]" }, { '9', "[9]" },
+		{ 'A', "[A]" }, { 'B', "[B]" }, { 'C', "[C]" }, { 'D', "[D]" }, { 'E', "[E]" },
+		{ 'F', "[F]" }, { 'G', "[G]" }, { 'H', "[H]" }, { 'I', "[I]" }, { 'J', "[J]" },
+		{ 'K', "[K]" }, { 'L', "[L]" }, { 'M', "[M]" }, { 'N', "[N]" }, { 'O', "[O]" },
+		{ 'P', "[P]" }, { 'Q', "[Q]" }, { 'R', "[R]" }, { 'S', "[S]" }, { 'T', "[T]" },
+		{ 'U', "[U]" }, { 'V', "[V]" }, { 'W', "[W]" }, { 'X', "[X]" }, { 'Y', "[Y]" },
+		{ 'Z', "[Z]" },
+		{ VK_LWIN, "[WIN]" },
+		{ VK_RWIN, "[WIN]" },
+		{ VK_APPS, "[APP]" },
+		{ VK_SLEEP, "[SLE]" },
+		{ VK_NUMPAD0, "[KP0]" },
+		{ VK_NUMPAD1, "[KP1]" },
+		{ VK_NUMPAD2, "[KP2]" },
+		{ VK_NUMPAD3, "[KP3]" },
+		{ VK_NUMPAD4, "[KP4]" },
+		{ VK_NUMPAD5, "[KP5]" },
+		{ VK_NUMPAD6, "[KP6]" },
+		{ VK_NUMPAD7, "[KP7]" },
+		{ VK_NUMPAD8, "[KP8]" },
+		{ VK_NUMPAD9, "[KP9]" },
+		{ VK_MULTIPLY, "[KP*]" },
+		{ VK_ADD, "[KP+]" },
+		{ VK_SEPARATOR, "[SEP]" },
+		{ VK_SUBTRACT, "[KP-]" },
+		{ VK_DECIMAL, "[KP.]" },
+		{ VK_DIVIDE, "[KP/]" },
+		{ VK_F1, "[F1]" }, { VK_F2, "[F2]" }, { VK_F3, "[F3]" }, { VK_F4, "[F4]" },
+		{ VK_F5, "[F5]" }, { VK_F6, "[F6]" }, { VK_F7, "[F7]" }, { VK_F8, "[F8]" },
+		{ VK_F9, "[F9]" }, { VK_F10, "[F10]" }, { VK_F11, "[F11]" }, { VK_F12, "[F12]" },
+		{ VK_F13, "[F13]" }, { VK_F14, "[F14]" }, { VK_F15, "[F15]" }, { VK_F16, "[F16]" },
+		{ VK_F17, "[F17]" }, { VK_F18, "[F18]" }, { VK_F19, "[F19]" }, { VK_F20, "[F20]" },
+		{ VK_F21, "[F21]" }, { VK_F22, "[F22]" }, { VK_F23, "[F23]" }, { VK_F24, "[F24]" },
+		{ VK_NUMLOCK, "[NUM]" },
+		{ VK_SCROLL, "[SCR]" },
+		{ VK_LSHIFT, "[LSH]" },
+		{ VK_RSHIFT, "[RSH]" },
+		{ VK_LCONTROL, "[LCT]" },
+		{ VK_RCONTROL, "[RCT]" },
+		{ VK_LMENU, "[LAL]" },
+		{ VK_RMENU, "[RAL]" },
+		{ VK_OEM_1, "[;: ]" },
+		{ VK_OEM_PLUS, "[+]" },
+		{ VK_OEM_COMMA, "[,]" },
+		{ VK_OEM_MINUS, "[-]" },
+		{ VK_OEM_PERIOD, "[.]" },
+		{ VK_OEM_2, "[/?]" },
+		{ VK_OEM_3, "[`~]" },
+		{ VK_OEM_4, "[{]" },
+		{ VK_OEM_5, "[\\|]" },
+		{ VK_OEM_6, "[}]" },
+		{ VK_OEM_7, "['\"]" },
+	};
+
+	auto it = keyMap.find(vk);
+	if (it != keyMap.end())
+		return it->second;
+
+	return "[-]";
+}
 
 GuiContext* IdaLovesMe::Globals::Gui_Ctx = NULL;
 std::vector<DrawList::RenderObject> DrawList::Drawlist;
@@ -290,18 +225,24 @@ static GuiWindow* ui::CreateNewWindow(const char*& name, Vec2 size, GuiFlags fla
 void ui::GetInputFromWindow(HWND window) {
 	GuiContext& g = *Gui_Ctx;
 
-	for (int i = 0; i < 256; i++) {
-		if (i == static_cast<int>(Core::Config::Get().menu.toggleKey))
-		{
-			g.PrevKeyState[i] = false;
-			g.KeyState[i] = false;
-			continue;
-		}
+	BYTE keyState[256]{};
+	bool hasState = GetKeyboardState(keyState) != FALSE;
 
+	for (int i = 0; i < 256; i++) {
 		g.PrevKeyState[i] = g.KeyState[i];
-		g.KeyState[i] = (OriginalGuiReadKeyState(i) & 0x8000) != 0;
-		if (i == 0x0E) g.KeyState[i] = ImGui::GetIO().MouseWheel > 0;
-		if (i == 0x0F) g.KeyState[i] = ImGui::GetIO().MouseWheel < 0;
+		g.KeyState[i] = hasState ? ((keyState[i] & 0x80) != 0) : ((GetAsyncKeyState(i) & 0x8000) != 0);
+	}
+
+	g.KeyState[VK_LBUTTON] = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+	g.KeyState[VK_RBUTTON] = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+	g.KeyState[VK_MBUTTON] = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+	g.KeyState[0x0E] = ImGui::GetIO().MouseWheel > 0;
+	g.KeyState[0x0F] = ImGui::GetIO().MouseWheel < 0;
+
+	int toggleKey = static_cast<int>(Core::Config::Get().menu.toggleKey);
+	if (toggleKey >= 0 && toggleKey < 256) {
+		g.PrevKeyState[toggleKey] = false;
+		g.KeyState[toggleKey] = false;
 	}
 
 	g.PrevMousePos = g.MousePos;
@@ -486,12 +427,15 @@ HSV ui::ColorPickerBehavior(GuiWindow* PickerWindow, Rect& RcColor, Rect& RcAlph
 
 	static int ActiveBar = -1;
 
-	CColor Ccol = CColor(col[0], col[1], col[2], col[3]);
+	float initH = 0.f, initS = 0.f, initV = 0.f;
+	ImGui::ColorConvertRGBtoHSV(col[0] / 255.f, col[1] / 255.f, col[2] / 255.f, initH, initS, initV);
 
-	static HSV hsv = HSV(Ccol.Hue(), Ccol.Saturation(), Ccol.Brightness(), Ccol.a());
+	static HSV hsv = HSV(initH, initS, initV, static_cast<float>(col[3]));
 
-	if (reset)
-		hsv = HSV(Ccol.Hue(), Ccol.Saturation(), Ccol.Brightness(), Ccol.a());
+	if (reset) {
+		ImGui::ColorConvertRGBtoHSV(col[0] / 255.f, col[1] / 255.f, col[2] / 255.f, initH, initS, initV);
+		hsv = HSV(initH, initS, initV, static_cast<float>(col[3]));
+	}
 
 	bool hovered = false, held = false;
 	ButtonBehavior(PickerWindow->ParentWindow, PickerWindow->Name.c_str(), { PickerWindow->Pos, PickerWindow->Size }, hovered, held);
@@ -871,7 +815,7 @@ void ui::EndChild() {
 		text_size = Render::Draw->GetTextSize(Render::Fonts::Tahombd, ChildName.c_str());
 
 	Render::Draw->Text(ChildName.c_str(), window->Pos.x + 14, window->Pos.y + (text_size.y / -2) + 1, LEFT, Render::Fonts::Tahombd, false, D3DCOLOR_RGBA(15, 15, 15, g.MenuAlpha), IdaLovesMe::Vec2(0, 0), true);
-	Render::Draw->Text(ChildName.c_str(), window->Pos.x + 13, window->Pos.y + (text_size.y / -2), LEFT, Render::Fonts::Tahombd, false, window->Dragging ? CMenu::get()->GetMenuColor() : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha), IdaLovesMe::Vec2(0, 0), true);
+	Render::Draw->Text(ChildName.c_str(), window->Pos.x + 13, window->Pos.y + (text_size.y / -2), LEFT, Render::Fonts::Tahombd, false, window->Dragging ? GetMenuColor() : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha), IdaLovesMe::Vec2(0, 0), true);
 
 	ImGui::GetForegroundDrawList()->PopClipRect();
 
@@ -966,7 +910,7 @@ bool ui::Checkbox(const char* label, bool* v, bool special) {
 	Vec2 DrawPos = Window->CursorPos;
 	Rect total_bb = { DrawPos, Vec2(150, label_size.y) };
 
-	D3DCOLOR EnabledColor = CMenu::get()->GetMenuColor();
+	D3DCOLOR EnabledColor = GetMenuColor();
 
 	AddItemToWindow(Window, total_bb);
 
@@ -977,7 +921,7 @@ bool ui::Checkbox(const char* label, bool* v, bool special) {
 		*v = !*v;
 
 	if (*v)
-		Render::Draw->Gradient(DrawPos + Vec2(1, 1), Vec2(6, 6), CMenu::get()->GetMenuColor(), D3DCOLOR_RGBA(int(EnabledColor.Value.x * 255.0f), int(EnabledColor.Value.y * 255.0f), int(EnabledColor.Value.z * 255.0f), std::clamp(180, 0, int(EnabledColor.Value.w * 255.0f))), true);
+		Render::Draw->Gradient(DrawPos + Vec2(1, 1), Vec2(6, 6), GetMenuColor(), D3DCOLOR_RGBA(int(EnabledColor.Value.x * 255.0f), int(EnabledColor.Value.y * 255.0f), int(EnabledColor.Value.z * 255.0f), std::clamp(180, 0, int(EnabledColor.Value.w * 255.0f))), true);
 	else
 		if (hovered)
 			Render::Draw->Gradient(DrawPos + Vec2(1, 1), Vec2(6, 6), D3DCOLOR_RGBA(85, 85, 85, std::clamp(255, 0, g.MenuAlpha)), D3DCOLOR_RGBA(55, 55, 55, std::clamp(255, 0, g.MenuAlpha)), true);
@@ -1066,7 +1010,7 @@ void ui::Slider(const char* label, T* v, T v_min, T v_max, const char* format, G
 
 	Render::Draw->Gradient(slider_bb.Min + Vec2(0, 1), slider_bb.Max - Vec2(0, 1), bg_color[0], bg_color[1], true);
 
-	Render::Draw->FilledRect(slider_bb.Min + Vec2(1, 1), Vec2(rect_width, slider_bb.Max.y), CMenu::get()->GetMenuColor());
+	Render::Draw->FilledRect(slider_bb.Min + Vec2(1, 1), Vec2(rect_width, slider_bb.Max.y), GetMenuColor());
 	Render::Draw->Rect(slider_bb.Min, slider_bb.Max + Vec2(0, 1), 1, D3DCOLOR_RGBA(12, 12, 12, g.MenuAlpha));
 	Render::Draw->Gradient(slider_bb.Min + Vec2(1, 1), Vec2(rect_width, slider_bb.Max.y), D3DCOLOR_RGBA(0, 0, 0, 0), D3DCOLOR_RGBA(0, 0, 0, std::clamp(120, 0, g.MenuAlpha)), true);
 
@@ -1091,7 +1035,7 @@ bool ui::ComboSelectable(const char* label, bool selected, GuiFlags flags, const
 
 	LPD3DXFONT TextFont = selected || hovered ? Render::Fonts::Tahombd : Render::Fonts::Verdana;
 	Vec2 label_size = Render::Draw->GetTextSize(TextFont, label);
-	D3DCOLOR TextColor = selected ? CMenu::get()->GetMenuColor() : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha);
+	D3DCOLOR TextColor = selected ? GetMenuColor() : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha);
 
 	AddItemToWindow(Window, Framebb, Window->Flags);
 
@@ -1116,7 +1060,7 @@ bool ui::Selectable(const char* label, bool activated, const Vec2& size_arg) {
 
 	LPD3DXFONT TextFont = Window->SelectedItem == label ? Render::Fonts::Tahombd : Render::Fonts::Verdana;
 	Vec2 label_size = Render::Draw->GetTextSize(TextFont, label);
-	D3DCOLOR TextColor = activated ? CMenu::get()->GetMenuColor() : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha);
+	D3DCOLOR TextColor = activated ? GetMenuColor() : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha);
 
 	AddItemToWindow(Window, Framebb, Window->Flags);
 
@@ -1313,13 +1257,17 @@ bool ui::ColorPicker(const char* label, int col[4], GuiFlags flags) {
 
 	if (PickerWindow->Opened) {
 		HSV ColHSV = ColorPickerBehavior(PickerWindow, ColorRect, AlphaRect, HueRect, col, init);
-		CColor Topr = CColor::FromHSB(ColHSV.h, 1.f, 1.f);
+		float tr = 0.f, tg = 0.f, tb = 0.f;
+		ImGui::ColorConvertHSVtoRGB(ColHSV.h, 1.f, 1.f, tr, tg, tb);
+		int topR = static_cast<int>(tr * 255.f);
+		int topG = static_cast<int>(tg * 255.f);
+		int topB = static_cast<int>(tb * 255.f);
 
 		Vec2 ColorPos = { std::clamp(ColorRect.Min.x + int(std::roundf(ColHSV.s * ColorRect.Max.x)), ColorRect.Min.x, ColorRect.Min.x + ColorRect.Max.x), std::clamp(ColorRect.Min.y + int((1.f - ColHSV.v) * ColorRect.Max.y), ColorRect.Min.y, ColorRect.Min.y + ColorRect.Max.y) };
 		Vec2 HuePos = { HueRect.Min.x, std::clamp(HueRect.Min.y + int((1.f - ColHSV.h) * HueRect.Max.y), HueRect.Min.y, HueRect.Min.y + HueRect.Max.y) };
 		Vec2 AlphaPos = { std::clamp(AlphaRect.Min.x + int(AlphaRect.Max.x * (ColHSV.a / 255.f)), AlphaRect.Min.x, AlphaRect.Min.x + AlphaRect.Max.x), AlphaRect.Min.y };
 
-		DrawList::AddGradient(ColorRect.Min, ColorRect.Max, D3DCOLOR_RGBA(255, 255, 255, g.MenuAlpha), D3DCOLOR_RGBA(Topr.r(), Topr.g(), Topr.b(), 255), false, false);
+		DrawList::AddGradient(ColorRect.Min, ColorRect.Max, D3DCOLOR_RGBA(255, 255, 255, g.MenuAlpha), D3DCOLOR_RGBA(topR, topG, topB, 255), false, false);
 		DrawList::AddGradient(ColorRect.Min, ColorRect.Max, D3DCOLOR_RGBA(0, 0, 0, std::clamp(0, 0, g.MenuAlpha)), D3DCOLOR_RGBA(0, 0, 0, g.MenuAlpha), true, false);
 		DrawList::AddRect(ColorRect.Min - Vec2(1, 1), Vec2(152, 152), D3DCOLOR_RGBA(12, 12, 12, g.MenuAlpha));
 
@@ -1340,11 +1288,12 @@ bool ui::ColorPicker(const char* label, int col[4], GuiFlags flags) {
 		DrawList::AddRect(HuePos - Vec2(0, 2), Vec2(15, 4), D3DCOLOR_RGBA(12, 12, 12, std::clamp(180, 0, g.MenuAlpha)));
 		DrawList::AddRect(HuePos - Vec2(-1, 1), Vec2(13, 2), D3DCOLOR_RGBA(255, 255, 255, std::clamp(140, 0, g.MenuAlpha)));
 
-		CColor outcolor = CColor::FromHSB(ColHSV.h, ColHSV.s, ColHSV.v, ColHSV.a);
-		col[0] = outcolor.r();
-		col[1] = outcolor.g();
-		col[2] = outcolor.b();
-		col[3] = outcolor.a();
+		float outR = 0.f, outG = 0.f, outB = 0.f;
+		ImGui::ColorConvertHSVtoRGB(ColHSV.h, ColHSV.s, ColHSV.v, outR, outG, outB);
+		col[0] = static_cast<int>(outR * 255.f);
+		col[1] = static_cast<int>(outG * 255.f);
+		col[2] = static_cast<int>(outB * 255.f);
+		col[3] = static_cast<int>(ColHSV.a);
 	}
 
 	End();
@@ -1358,8 +1307,8 @@ bool ui::KeyBind(const char* id, int* current_key, int* key_style) {
 	GuiWindow* Window = GetCurrentWindow();
 	bool edit_requested = Window->ItemActive[id];
 
-	*current_key = std::clamp(*current_key, 0, 165);
-	Vec2 TextSize = Render::Draw->GetTextSize(Render::Fonts::SmallFont, keys[*current_key]);
+	*current_key = std::clamp(*current_key, 0, 255);
+	Vec2 TextSize = Render::Draw->GetTextSize(Render::Fonts::SmallFont, GetKeyName(*current_key));
 	Rect Fullbb = { Window->Pos.x + Window->Size.x - TextSize.x - 25, Window->PevCursorPos.y , TextSize.x, TextSize.y };
 
 	bool hovered = false, held = false;
@@ -1369,7 +1318,7 @@ bool ui::KeyBind(const char* id, int* current_key, int* key_style) {
 		Window->ItemActive[id] = true;
 
 	if (edit_requested) {
-		for (int i = 0; i < 166; i++) {
+		for (int i = 0; i < 256; i++) {
 			if (g.KeyState[i]) {
 				*current_key = i == VK_ESCAPE ? 0 : i;
 				Window->ItemActive[id] = false;
@@ -1379,7 +1328,7 @@ bool ui::KeyBind(const char* id, int* current_key, int* key_style) {
 	}
 
 	D3DCOLOR TextColor = edit_requested ? D3DCOLOR_RGBA(255, 0, 0, g.MenuAlpha) : (hovered ? D3DCOLOR_RGBA(141, 141, 141, g.MenuAlpha) : D3DCOLOR_RGBA(114, 114, 114, g.MenuAlpha) );
-	Render::Draw->Text(keys[*current_key], Fullbb.Min.x + TextSize.x, Fullbb.Min.y, RIGHT, Render::Fonts::SmallFont, true,  TextColor);
+	Render::Draw->Text(GetKeyName(*current_key), Fullbb.Min.x + TextSize.x, Fullbb.Min.y, RIGHT, Render::Fonts::SmallFont, true,  TextColor);
 
 	if (key_style)
 	{
@@ -1516,7 +1465,9 @@ void ui::InputText(const char* id, char* buffer, GuiFlags flags) {
 
 	const int colors[3] = { 12, 50, 16 };
 
-	D3DCOLOR text_col = is_selected ? CMenu::get()->GetMenuColor() : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha);
+	const auto& mCol = Core::Config::Get().menu.color;
+	D3DCOLOR menuColor = D3DCOLOR_RGBA(mCol[0], mCol[1], mCol[2], std::min(255, g.MenuAlpha));
+	D3DCOLOR text_col = is_selected ? menuColor : D3DCOLOR_RGBA(205, 205, 205, g.MenuAlpha);
 
 	for (int i = 0; i < 3; i++)
 		Render::Draw->Rect(Framebb.Min + Vec2(i, i), Framebb.Max - Vec2(i * 2, i * 2), 1, D3DCOLOR_RGBA(colors[i], colors[i], colors[i], g.MenuAlpha));

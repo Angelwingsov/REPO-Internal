@@ -64,6 +64,43 @@ bool InputHook::IsKeyHeld(int vkCode) {
     return (GetAsyncKeyState(vkCode) & 0x8000) != 0;
 }
 
+void InputHook::ReleaseAllKeys(HWND hWnd, WNDPROC originalProc) {
+    if (!hWnd || !originalProc) return;
+
+    for (int vk = 1; vk < 256; ++vk) {
+        if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON ||
+            vk == VK_XBUTTON1 || vk == VK_XBUTTON2) {
+            continue;
+        }
+
+        if (((GetAsyncKeyState(vk) & 0x8000) != 0) || ((GetKeyState(vk) & 0x8000) != 0)) {
+            UINT scanCode = MapVirtualKeyA(vk, MAPVK_VK_TO_VSC);
+            LPARAM lParamUp = 1 | (scanCode << 16) | (1 << 30) | (1 << 31);
+            CallWindowProc(originalProc, hWnd, WM_KEYUP, static_cast<WPARAM>(vk), lParamUp);
+        }
+    }
+
+    static const int s_CommonKeys[] = {
+        'W', 'A', 'S', 'D',
+        VK_SPACE, VK_SHIFT, VK_LSHIFT, VK_RSHIFT,
+        VK_CONTROL, VK_LCONTROL, VK_RCONTROL,
+        VK_MENU, VK_LMENU, VK_RMENU,
+        VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT,
+        'E', 'F', 'Q', 'C', 'R', 'Z', 'X', VK_TAB
+    };
+    for (int vk : s_CommonKeys) {
+        UINT scanCode = MapVirtualKeyA(vk, MAPVK_VK_TO_VSC);
+        LPARAM lParamUp = 1 | (scanCode << 16) | (1 << 30) | (1 << 31);
+        CallWindowProc(originalProc, hWnd, WM_KEYUP, static_cast<WPARAM>(vk), lParamUp);
+    }
+
+    CallWindowProc(originalProc, hWnd, WM_LBUTTONUP, 0, 0);
+    CallWindowProc(originalProc, hWnd, WM_RBUTTONUP, 0, 0);
+    CallWindowProc(originalProc, hWnd, WM_MBUTTONUP, 0, 0);
+    CallWindowProc(originalProc, hWnd, WM_XBUTTONUP, MAKEWPARAM(0, XBUTTON1), 0);
+    CallWindowProc(originalProc, hWnd, WM_XBUTTONUP, MAKEWPARAM(0, XBUTTON2), 0);
+}
+
 LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     Core::HookActivity activity;
     std::unique_lock<std::recursive_mutex> lock(Core::Config::Mutex());
@@ -126,11 +163,28 @@ LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, 
     if (toggleMenu) {
         cfg.menu.isVisible = !cfg.menu.isVisible;
         LOG_INFO("Menu toggled: %s", cfg.menu.isVisible ? "VISIBLE" : "HIDDEN");
+
+        WNDPROC original = s_OriginalWndProc;
+        if (original) {
+            ReleaseAllKeys(hWnd, original);
+        }
+
+        if (ImGui::GetCurrentContext()) {
+            ImGuiIO& io = ImGui::GetIO();
+            io.ClearInputKeys();
+            io.ClearEventsQueue();
+        }
         return 0;
     }
 
     if (cfg.menu.isVisible) {
         if (ImGui::GetCurrentContext() && ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam)) {
+            if (uMsg == WM_KEYUP || uMsg == WM_SYSKEYUP) {
+                WNDPROC original = s_OriginalWndProc;
+                if (original) {
+                    CallWindowProc(original, hWnd, uMsg, wParam, lParam);
+                }
+            }
             return true;
         }
 
@@ -139,9 +193,29 @@ LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, 
                 return true;
             }
             if (uMsg == WM_INPUT) {
+                RAWINPUT raw{};
+                UINT size = sizeof(raw);
+                if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1) {
+                    if (raw.header.dwType == RIM_TYPEKEYBOARD && (raw.data.keyboard.Flags & RI_KEY_BREAK)) {
+                        WNDPROC original = s_OriginalWndProc;
+                        lock.unlock();
+                        if (original) {
+                            return CallWindowProc(original, hWnd, uMsg, wParam, lParam);
+                        }
+                        return 0;
+                    }
+                }
                 return true;
             }
             if (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST) {
+                if (uMsg == WM_KEYUP || uMsg == WM_SYSKEYUP) {
+                    WNDPROC original = s_OriginalWndProc;
+                    lock.unlock();
+                    if (original) {
+                        return CallWindowProc(original, hWnd, uMsg, wParam, lParam);
+                    }
+                    return 0;
+                }
                 return true;
             }
         } else if (ImGui::GetCurrentContext()) {
@@ -150,6 +224,14 @@ LRESULT CALLBACK InputHook::WndProcHandler(HWND hWnd, UINT uMsg, WPARAM wParam, 
                 return true;
             }
             if (io.WantCaptureKeyboard && (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST)) {
+                if (uMsg == WM_KEYUP || uMsg == WM_SYSKEYUP) {
+                    WNDPROC original = s_OriginalWndProc;
+                    lock.unlock();
+                    if (original) {
+                        return CallWindowProc(original, hWnd, uMsg, wParam, lParam);
+                    }
+                    return 0;
+                }
                 return true;
             }
         }

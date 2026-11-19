@@ -17,3 +17,4 @@ build/
 __pycache__/
 decompiled/
 temp_decompiler/
+*.locked_*

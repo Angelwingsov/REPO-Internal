@@ -1,7 +1,6 @@
 #include "menu.h"
 #include "original/framework.h"
 #include "original/renderer.h"
-#include "original/bridge.h"
 #include "core/config.h"
 #include "core/config_store.h"
 #include "game/state.h"
@@ -355,13 +354,20 @@ void Menu::Render() {
                 {"Shake / bob",&cfg.removals.noCameraShake},
                 {"Sway",&cfg.removals.noCameraNoise},
                 {"Glitches",&cfg.removals.noCameraGlitch},
-                {"Damage overlay",&cfg.removals.noHurtOverlay}});
+                {"Damage overlay",&cfg.removals.noHurtOverlay},
+                {"Camera zoom",&cfg.removals.noCameraZoom},
+                {"Anti Peeper",&cfg.removals.antiPeeper}});
             ui::EndChild();
             ui::BeginChild("Effects & View",{Vec2(6,2),Vec2(3,8)});
             ui::Checkbox("Fullbright",&cfg.fullbright.enabled);
             if(cfg.fullbright.enabled) ui::SliderFloat("Brightness",&cfg.fullbright.brightness,.1f,3,"%.2f",.05f);
             ui::Checkbox("Crosshair",&cfg.visual.drawCrosshair);Color("##CrosshairColor",cfg.visual.crosshairColor);
             if(cfg.visual.drawCrosshair) ui::SliderFloat("Size",&cfg.visual.crosshairSize,2,20,"%.0f px",1);
+            ui::Checkbox("Chams",&cfg.chams.enabled);
+            if(cfg.chams.enabled) {
+                ui::Label("Chams visible");Color("##ChamsVisColor",cfg.chams.colorVisible);
+                ui::Label("Chams occluded");Color("##ChamsInvisColor",cfg.chams.colorInvisible);
+            }
             ui::EndChild();break;
         }
         break;

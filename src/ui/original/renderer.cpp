@@ -28,19 +28,6 @@ void CDraw::CreateObjects()
     m_BgTexture = UI::Theme::Background();
 }
 
-void CDraw::NewFont(int script_id, std::string path, int size, std::string id)
-{
-    if (GetFontByName(script_id, id))
-        return;
-
-    font_queue.at(script_id).push_back(std::make_tuple(id, path, size));
-}
-
-ImFont* CDraw::GetFontByName(int script_id, std::string id)
-{
-    return fonts.at(script_id)[id];
-}
-
 void CDraw::ReleaseObjects()
 {
     m_BgTexture = nullptr;
@@ -196,7 +183,7 @@ ID3D11ShaderResourceView* CDraw::GetBgTexture()
     return this->m_BgTexture;
 }
 
-Vec2 CDraw::GetTextSize(ID3DXFont* Font, const char* Text)
+Vec2 CDraw::GetTextSize(ImFont* Font, const char* Text)
 {
     ImVec2 size = Font->CalcTextSizeA(Font->LegacySize, FLT_MAX, 0.0f, Text);
 

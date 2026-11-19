@@ -51,6 +51,7 @@ public:
     void SetTransformLocalEulerAngles(MonoObject* transformObj, const Vector3& angles);
     Vector3 GetComponentPosition(MonoObject* componentObj);
     std::string GetObjectName(MonoObject* obj);
+    bool HasComponent(MonoObject* obj, MonoClass* klass);
 
     void SetRigidbodyPosition(MonoObject* rbObj, const Vector3& pos);
     void SetRigidbodyVelocity(MonoObject* rbObj, const Vector3& vel);

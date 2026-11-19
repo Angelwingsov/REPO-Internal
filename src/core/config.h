@@ -194,6 +194,8 @@ struct RemovalsConfig {
     bool noCameraNoise = true;
     bool noCameraGlitch = true;
     bool noHurtOverlay = true;
+    bool noCameraZoom = true;
+    bool antiPeeper = true;
     bool noPostProcessing = false;
 };
 

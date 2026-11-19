@@ -11,8 +11,6 @@ public:
     void Initialize();
     void Update();
 
-    static const char* GetKeyName(int vkCode);
-
 private:
     PlayerMods() = default;
 

@@ -193,6 +193,14 @@ bool GameState::ResolveOffsets() {
     RESOLVE_FIELD(klassPlayerController, "Velocity", offsets.PlayerController_Velocity, 0x00DC);
     RESOLVE_FIELD(klassPlayerController, "VelocityImpulse", offsets.PlayerController_VelocityImpulse, 0x00EC);
     RESOLVE_FIELD(klassPlayerController, "positionPrevious", offsets.PlayerController_positionPrevious, 0x01F8);
+    RESOLVE_FIELD(klassPlayerController, "InputDisableTimer", offsets.PlayerController_InputDisableTimer, -1);
+    RESOLVE_FIELD(klassPlayerController, "InputDirection", offsets.PlayerController_InputDirection, -1);
+    RESOLVE_FIELD(klassPlayerController, "InputDirectionRaw", offsets.PlayerController_InputDirectionRaw, -1);
+
+    if (klassInputManager) {
+        RESOLVE_FIELD(klassInputManager, "disableMovementTimer", offsets.InputManager_disableMovementTimer, -1);
+        RESOLVE_FIELD(klassInputManager, "disableAimingTimer", offsets.InputManager_disableAimingTimer, -1);
+    }
 
     RESOLVE_FIELD(klassPhysGrabber, "grabStrength", offsets.PhysGrabber_grabStrength, 0x01C8);
     RESOLVE_FIELD(klassPhysGrabber, "throwStrength", offsets.PhysGrabber_throwStrength, 0x01CC);
@@ -304,6 +312,7 @@ bool GameState::Initialize() {
     GET_APP_CLASS(klassValuableDirector, "ValuableDirector");
     GET_APP_CLASS(klassValuableObject, "ValuableObject");
     GET_APP_CLASS(klassItemManager, "ItemManager");
+    GET_APP_CLASS(klassInputManager, "InputManager");
     GET_APP_CLASS(klassItemAttributes, "ItemAttributes");
     GET_APP_CLASS(klassSemiFunc, "SemiFunc");
     GET_APP_CLASS(klassCameraUtils, "CameraUtils");
@@ -337,6 +346,15 @@ bool GameState::Initialize() {
         }
     }
 
+    if (klassInputManager) {
+        methodInputManagerResetInput = bridge.FindMethod(klassInputManager, "ResetInput", 0);
+        if (methodInputManagerResetInput) {
+            LOG_OK("Method [InputManager::ResetInput] -> %p", methodInputManagerResetInput);
+        } else {
+            LOG_WARN("Method [InputManager::ResetInput] not found!");
+        }
+    }
+
     if (klassPlayerAvatarVisuals) {
         methodShowSelfOverride = bridge.FindMethod(klassPlayerAvatarVisuals, "ShowSelfOverride", 1);
         if (methodShowSelfOverride) {
@@ -367,11 +385,19 @@ bool GameState::Initialize() {
     }
 
     if (klassPlayerVoiceChat) {
+        isVoiceSpatialDisable = false;
         methodPlayerVoiceChatSetSpatialAudio = bridge.FindMethod(klassPlayerVoiceChat, "SetSpatialAudio", 1);
-        if (methodPlayerVoiceChatSetSpatialAudio) {
-            LOG_OK("Method [PlayerVoiceChat::SetSpatialAudio] -> %p", methodPlayerVoiceChatSetSpatialAudio);
+        if (!methodPlayerVoiceChatSetSpatialAudio) {
+            methodPlayerVoiceChatSetSpatialAudio = bridge.FindMethod(klassPlayerVoiceChat, "SpatialDisable", 1);
+            if (methodPlayerVoiceChatSetSpatialAudio) {
+                isVoiceSpatialDisable = true;
+                LOG_OK("Method [PlayerVoiceChat::SpatialDisable] -> %p", methodPlayerVoiceChatSetSpatialAudio);
+            }
         } else {
-            LOG_WARN("Method [PlayerVoiceChat::SetSpatialAudio] not found!");
+            LOG_OK("Method [PlayerVoiceChat::SetSpatialAudio] -> %p", methodPlayerVoiceChatSetSpatialAudio);
+        }
+        if (!methodPlayerVoiceChatSetSpatialAudio) {
+            LOG_WARN("Method [PlayerVoiceChat::SetSpatialAudio/SpatialDisable] not found!");
         }
     }
 

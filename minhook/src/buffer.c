@@ -32,8 +32,8 @@
 // Size of each memory block. (= page size of VirtualAlloc)
 #define MEMORY_BLOCK_SIZE 0x1000
 
-// Max range for seeking a memory block. (= 1024MB)
-#define MAX_MEMORY_RANGE 0x40000000
+// Max range for seeking a memory block. (= 1792MB)
+#define MAX_MEMORY_RANGE 0x70000000
 
 // Memory protection flags to check the executable address.
 #define PAGE_EXECUTE_FLAGS \
@@ -259,6 +259,47 @@ LPVOID AllocateBuffer(LPVOID pOrigin)
     // Fill the slot with INT3 for debugging.
     memset(pSlot, 0xCC, sizeof(MEMORY_SLOT));
 #endif
+    return pSlot;
+}
+
+//-------------------------------------------------------------------------
+LPVOID AllocateBufferAnywhere(VOID)
+{
+    PMEMORY_SLOT  pSlot;
+    PMEMORY_BLOCK pBlock;
+
+    for (pBlock = g_pMemoryBlocks; pBlock != NULL; pBlock = pBlock->pNext)
+    {
+        if (pBlock->pFree != NULL)
+        {
+            pSlot = pBlock->pFree;
+            pBlock->pFree = pSlot->pNext;
+            pBlock->usedCount++;
+            return pSlot;
+        }
+    }
+
+    pBlock = (PMEMORY_BLOCK)VirtualAlloc(
+        NULL, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (pBlock == NULL)
+        return NULL;
+
+    PMEMORY_SLOT pSlotHead = (PMEMORY_SLOT)(pBlock + 1);
+    pBlock->pFree = NULL;
+    pBlock->usedCount = 0;
+    do
+    {
+        pSlotHead->pNext = pBlock->pFree;
+        pBlock->pFree = pSlotHead;
+        pSlotHead++;
+    } while ((ULONG_PTR)pSlotHead - (ULONG_PTR)pBlock <= MEMORY_BLOCK_SIZE - MEMORY_SLOT_SIZE);
+
+    pBlock->pNext = g_pMemoryBlocks;
+    g_pMemoryBlocks = pBlock;
+
+    pSlot = pBlock->pFree;
+    pBlock->pFree = pSlot->pNext;
+    pBlock->usedCount++;
     return pSlot;
 }
 

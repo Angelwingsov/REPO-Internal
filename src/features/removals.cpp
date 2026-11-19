@@ -21,7 +21,7 @@ ObjectClass objectClass = nullptr;
 ParentClass parentClass = nullptr;
 UpdateMethod environmentUpdate = nullptr, postUpdate = nullptr, shakeUpdate = nullptr;
 UpdateMethod noiseUpdate = nullptr, glitchUpdate = nullptr, hurtUpdate = nullptr;
-UpdateMethod bobUpdate = nullptr;
+UpdateMethod bobUpdate = nullptr, cameraAimUpdate = nullptr, cameraZoomUpdate = nullptr;
 MonoMethod* effectLocalPositionSet = nullptr;
 MonoMethod* effectLocalRotationSet = nullptr;
 std::atomic<bool> stopping{false}, restored{false}, overridesActive{false};
@@ -139,6 +139,25 @@ int hurtImageOffset = -1, glitchParentOffset = -1;
 std::array<int, 2> glitchOffsets{};
 std::array<int, 13> shakeOffsets{};
 std::array<int, 3> noiseOffsets{};
+MonoClass* klassEnemyCeilingEye = nullptr;
+int aimTargetActiveOffset = -1;
+int aimTargetTimerOffset = -1;
+int aimTargetLerpOffset = -1;
+int aimTargetObjectOffset = -1;
+int aimTargetSoftActiveOffset = -1;
+int aimTargetSoftTimerOffset = -1;
+int aimTargetSoftStrengthOffset = -1;
+int aimTargetSoftStrengthNoAimOffset = -1;
+int aimTargetSoftObjectOffset = -1;
+int overrideZoomObjectOffset = -1;
+int overrideZoomTimerOffset = -1;
+int overrideZoomPriorityOffset = -1;
+int overrideActiveOffset = -1;
+int playerZoomDefaultOffset = -1;
+int zoomLerpOffset = -1;
+int zoomPrevOffset = -1;
+int zoomCurrentOffset = -1;
+int zoomNewOffset = -1;
 
 uintptr_t ReadObject(void* object, int offset) {
     uintptr_t result = 0;
@@ -288,6 +307,134 @@ void HurtHook(void* object) {
         hurtImage.Disable(ReadObject(object, hurtImageOffset), behaviourGet, behaviourSet);
     TrackOverrides();
 }
+bool IsPeeperObject(uintptr_t obj) {
+    if (!obj || !Unity::Engine::IsValidUnityObject(reinterpret_cast<void*>(obj)))
+        return false;
+
+    std::string name = Unity::Engine::Get().GetObjectName(reinterpret_cast<MonoObject*>(obj));
+    if (!name.empty()) {
+        std::string lower = name;
+        for (char& c : lower) c = static_cast<char>(tolower(c));
+        if (lower.find("ceilingeye") != std::string::npos ||
+            lower.find("ceiling eye") != std::string::npos ||
+            lower.find("peeper") != std::string::npos) {
+            return true;
+        }
+    }
+
+    if (klassEnemyCeilingEye && Unity::Engine::Get().HasComponent(reinterpret_cast<MonoObject*>(obj), klassEnemyCeilingEye)) {
+        return true;
+    }
+
+    return false;
+}
+void CameraAimHook(void* object) {
+    Core::HookActivity activity;
+    if (StopRequested()) {
+        if (cameraAimUpdate) cameraAimUpdate(object);
+        return;
+    }
+
+    const auto config = Core::Config::Copy().removals;
+    if (config.enabled && config.antiPeeper && object) {
+        uintptr_t ptr = reinterpret_cast<uintptr_t>(object);
+
+        if (aimTargetObjectOffset > 0) {
+            uintptr_t targetObj = ReadObject(object, aimTargetObjectOffset);
+            if (targetObj && IsPeeperObject(targetObj)) {
+                if (aimTargetActiveOffset > 0) Memory::Write(ptr + aimTargetActiveOffset, false);
+                if (aimTargetTimerOffset > 0) Memory::WriteFloat(ptr + aimTargetTimerOffset, 0.0f);
+                if (aimTargetLerpOffset > 0) Memory::WriteFloat(ptr + aimTargetLerpOffset, 0.0f);
+                Memory::WritePtr(ptr + aimTargetObjectOffset, 0);
+            }
+        }
+
+        if (aimTargetSoftObjectOffset > 0) {
+            uintptr_t softTargetObj = ReadObject(object, aimTargetSoftObjectOffset);
+            if (softTargetObj && IsPeeperObject(softTargetObj)) {
+                if (aimTargetSoftActiveOffset > 0) Memory::Write(ptr + aimTargetSoftActiveOffset, false);
+                if (aimTargetSoftTimerOffset > 0) Memory::WriteFloat(ptr + aimTargetSoftTimerOffset, 0.0f);
+                if (aimTargetSoftStrengthOffset > 0) Memory::WriteFloat(ptr + aimTargetSoftStrengthOffset, 0.0f);
+                if (aimTargetSoftStrengthNoAimOffset > 0) Memory::WriteFloat(ptr + aimTargetSoftStrengthNoAimOffset, 0.0f);
+                Memory::WritePtr(ptr + aimTargetSoftObjectOffset, 0);
+            }
+        }
+    }
+
+    if (cameraAimUpdate) cameraAimUpdate(object);
+}
+void CameraZoomHook(void* object) {
+    Core::HookActivity activity;
+    if (StopRequested()) {
+        if (cameraZoomUpdate) cameraZoomUpdate(object);
+        return;
+    }
+
+    const auto config = Core::Config::Copy().removals;
+    bool shouldRemoveZoom = config.enabled && (config.noCameraZoom || config.antiPeeper);
+
+    if (shouldRemoveZoom && object) {
+        uintptr_t ptr = reinterpret_cast<uintptr_t>(object);
+
+        uintptr_t zoomObj = 0;
+        if (overrideZoomObjectOffset > 0) {
+            zoomObj = ReadObject(object, overrideZoomObjectOffset);
+        }
+
+        bool isOverrideActive = false;
+        if (overrideActiveOffset > 0) {
+            Memory::Read(ptr + overrideActiveOffset, isOverrideActive);
+        }
+
+        float overrideTimer = 0.0f;
+        if (overrideZoomTimerOffset > 0) {
+            Memory::ReadFloat(ptr + overrideZoomTimerOffset, overrideTimer);
+        }
+
+        bool blockThisZoom = config.noCameraZoom;
+        if (!blockThisZoom && config.antiPeeper) {
+            if ((zoomObj && IsPeeperObject(zoomObj)) || (isOverrideActive && overrideTimer > 0.0f)) {
+                blockThisZoom = true;
+            }
+        }
+
+        if (blockThisZoom) {
+            float defaultZoom = 65.0f;
+            if (playerZoomDefaultOffset > 0) {
+                Memory::ReadFloat(ptr + playerZoomDefaultOffset, defaultZoom);
+            }
+
+            if (overrideActiveOffset > 0) Memory::Write(ptr + overrideActiveOffset, false);
+            if (overrideZoomTimerOffset > 0) Memory::WriteFloat(ptr + overrideZoomTimerOffset, 0.0f);
+            if (overrideZoomPriorityOffset > 0) Memory::Write(ptr + overrideZoomPriorityOffset, -1000);
+            if (overrideZoomObjectOffset > 0) Memory::WritePtr(ptr + overrideZoomObjectOffset, 0);
+
+            if (zoomLerpOffset > 0) Memory::WriteFloat(ptr + zoomLerpOffset, 0.0f);
+            if (zoomCurrentOffset > 0) Memory::WriteFloat(ptr + zoomCurrentOffset, defaultZoom);
+            if (zoomNewOffset > 0) Memory::WriteFloat(ptr + zoomNewOffset, defaultZoom);
+            if (zoomPrevOffset > 0) Memory::WriteFloat(ptr + zoomPrevOffset, defaultZoom);
+        }
+    }
+
+    if (cameraZoomUpdate) cameraZoomUpdate(object);
+
+    if (shouldRemoveZoom && object) {
+        uintptr_t ptr = reinterpret_cast<uintptr_t>(object);
+        float defaultZoom = 65.0f;
+        if (playerZoomDefaultOffset > 0) {
+            Memory::ReadFloat(ptr + playerZoomDefaultOffset, defaultZoom);
+        }
+
+        float currentZoom = 0.0f;
+        if (zoomCurrentOffset > 0 && Memory::ReadFloat(ptr + zoomCurrentOffset, currentZoom)) {
+            if (currentZoom < defaultZoom - 0.5f) {
+                Memory::WriteFloat(ptr + zoomCurrentOffset, defaultZoom);
+                Memory::WriteFloat(ptr + zoomNewOffset, defaultZoom);
+                if (overrideActiveOffset > 0) Memory::Write(ptr + overrideActiveOffset, false);
+            }
+        }
+    }
+}
 bool HookUpdate(MonoClass* klass, UpdateMethod hook, UpdateMethod& original) {
     auto& bridge = Mono::Bridge::Get();
     MonoMethod* update = bridge.FindMethod(klass, "Update", 0);
@@ -359,6 +506,40 @@ void Removals::Initialize() {
     behaviourGet = bridge.FindMethod(behaviour, "get_enabled", 0);
     behaviourSet = bridge.FindMethod(behaviour, "set_enabled", 1);
     if (!HookUpdate(hurt, HurtHook, hurtUpdate)) LOG_WARN("Removals: HurtVignette hook unavailable");
+
+    klassEnemyCeilingEye = find("EnemyCeilingEye");
+
+    MonoClass* cameraAim = find("CameraAim");
+    if (cameraAim) {
+        aimTargetActiveOffset = Field(cameraAim, "AimTargetActive");
+        aimTargetTimerOffset = Field(cameraAim, "AimTargetTimer");
+        aimTargetLerpOffset = Field(cameraAim, "AimTargetLerp");
+        aimTargetObjectOffset = Field(cameraAim, "AimTargetObject");
+        aimTargetSoftActiveOffset = Field(cameraAim, "AimTargetSoftActive");
+        aimTargetSoftTimerOffset = Field(cameraAim, "AimTargetSoftTimer");
+        aimTargetSoftStrengthOffset = Field(cameraAim, "AimTargetSoftStrength");
+        aimTargetSoftStrengthNoAimOffset = Field(cameraAim, "AimTargetSoftStrengthNoAim");
+        aimTargetSoftObjectOffset = Field(cameraAim, "AimTargetSoftObject");
+        if (!HookUpdate(cameraAim, CameraAimHook, cameraAimUpdate)) {
+            LOG_WARN("Removals: CameraAim hook unavailable");
+        }
+    }
+
+    MonoClass* cameraZoom = find("CameraZoom");
+    if (cameraZoom) {
+        overrideZoomObjectOffset = Field(cameraZoom, "OverrideZoomObject");
+        overrideZoomTimerOffset = Field(cameraZoom, "OverrideZoomTimer");
+        overrideZoomPriorityOffset = Field(cameraZoom, "OverrideZoomPriority");
+        overrideActiveOffset = Field(cameraZoom, "OverrideActive");
+        playerZoomDefaultOffset = Field(cameraZoom, "playerZoomDefault");
+        zoomLerpOffset = Field(cameraZoom, "zoomLerp");
+        zoomPrevOffset = Field(cameraZoom, "zoomPrev");
+        zoomCurrentOffset = Field(cameraZoom, "zoomCurrent");
+        zoomNewOffset = Field(cameraZoom, "zoomNew");
+        if (!HookUpdate(cameraZoom, CameraZoomHook, cameraZoomUpdate)) {
+            LOG_WARN("Removals: CameraZoom hook unavailable");
+        }
+    }
     LOG_INFO("Removals initialized: lighting=%s, post-processing=%s", m_LightingReady ? "ready" : "unavailable",
         m_PostProcessingReady ? "ready" : "unavailable");
 }

@@ -44,13 +44,13 @@ namespace IdaLovesMe {
 		Vec2& operator+=(const Vec2& other)
 		{
 			x += other.x;
-			y += other.x;
+			y += other.y;
 			return *this;
 		}
 		Vec2& operator-=(const Vec2& other)
 		{
 			x -= other.x;
-			y -= other.x;
+			y -= other.y;
 			return *this;
 		}
 		Vec2 operator+(const Vec2& other)

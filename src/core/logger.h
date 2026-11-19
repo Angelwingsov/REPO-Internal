@@ -15,7 +15,7 @@ enum class LogLevel {
 
 class Logger {
 public:
-    static void Initialize(const char* consoleTitle = "Console");
+    static void Initialize(const char* consoleTitle = "t.me/cheatdevs");
     static void Shutdown();
 
     static void Log(LogLevel level, const char* format, ...);

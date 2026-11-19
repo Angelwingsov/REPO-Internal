@@ -157,6 +157,8 @@ Schema Bind(Config& c) {
     s.Add("removals.noCameraNoise", c.removals.noCameraNoise);
     s.Add("removals.noCameraGlitch", c.removals.noCameraGlitch);
     s.Add("removals.noHurtOverlay", c.removals.noHurtOverlay);
+    s.Add("removals.noCameraZoom", c.removals.noCameraZoom);
+    s.Add("removals.antiPeeper", c.removals.antiPeeper);
     s.Add("removals.noPostProcessing", c.removals.noPostProcessing);
     s.Add("fullbright.enabled", c.fullbright.enabled);
     s.Add("fullbright.brightness", c.fullbright.brightness, 0.1, 3);

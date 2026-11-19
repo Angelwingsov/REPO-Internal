@@ -97,6 +97,11 @@ struct Offsets {
     int PlayerController_Velocity = 0x00DC;
     int PlayerController_VelocityImpulse = 0x00EC;
     int PlayerController_positionPrevious = 0x01F8;
+    int PlayerController_InputDisableTimer = -1;
+    int PlayerController_InputDirection = -1;
+    int PlayerController_InputDirectionRaw = -1;
+    int InputManager_disableMovementTimer = -1;
+    int InputManager_disableAimingTimer = -1;
 
     int PlayerAvatar_voiceChat = 0x0060;
     int PlayerAvatar_tumble = 0x0068;
@@ -206,6 +211,7 @@ public:
     MonoClass* klassValuableDirector = nullptr;
     MonoClass* klassValuableObject = nullptr;
     MonoClass* klassItemManager = nullptr;
+    MonoClass* klassInputManager = nullptr;
     MonoClass* klassItemAttributes = nullptr;
     MonoClass* klassSemiFunc = nullptr;
     MonoClass* klassCameraUtils = nullptr;
@@ -235,12 +241,14 @@ public:
     MonoClass* klassCameraAim = nullptr;
 
     MonoMethod* methodCameraPositionOverride = nullptr;
+    MonoMethod* methodInputManagerResetInput = nullptr;
     MonoMethod* methodShowSelfOverride = nullptr;
     MonoMethod* methodCosmeticUnlockAll = nullptr;
     MonoMethod* methodOverrideAnimationSpeed = nullptr;
     MonoMethod* methodPlayerHealthHeal = nullptr;
     MonoMethod* methodPlayerHealthInvincibleSet = nullptr;
     MonoMethod* methodPlayerVoiceChatSetSpatialAudio = nullptr;
+    bool isVoiceSpatialDisable = false;
     MonoMethod* methodPlayerAvatarRevive = nullptr;
     MonoMethod* methodPlayerCosmeticsSetupCosmetics = nullptr;
     MonoMethod* methodPlayerCosmeticsSetupColors = nullptr;

@@ -95,11 +95,13 @@ typedef struct _TRAMPOLINE
 
 #if defined(_M_X64) || defined(__x86_64__)
     LPVOID pRelay;          // [Out] Address of the relay function.
+    BOOL   isAbsolute;      // [In] Use 64-bit absolute jump
+    UINT8  patchSize;       // [Out] Size of the patch
 #endif
     BOOL   patchAbove;      // [Out] Should use the hot patch area?
     UINT   nIP;             // [Out] Number of the instruction boundaries.
-    UINT8  oldIPs[8];       // [Out] Instruction boundaries of the target function.
-    UINT8  newIPs[8];       // [Out] Instruction boundaries of the trampoline function.
+    UINT8  oldIPs[16];      // [Out] Instruction boundaries of the target function.
+    UINT8  newIPs[16];      // [Out] Instruction boundaries of the trampoline function.
 } TRAMPOLINE, *PTRAMPOLINE;
 
 BOOL CreateTrampolineFunction(PTRAMPOLINE ct);

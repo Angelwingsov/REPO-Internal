@@ -130,7 +130,12 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
             return FALSE;
 
         pCopySrc = (LPVOID)pOldInst;
-        if (oldPos >= sizeof(JMP_REL))
+        UINT8 minPatch = sizeof(JMP_REL);
+#if defined(_M_X64) || defined(__x86_64__)
+        if (ct->isAbsolute)
+            minPatch = sizeof(JMP_ABS);
+#endif
+        if (oldPos >= minPatch)
         {
             // The trampoline function is long enough.
             // Complete the function with the jump to the target function.
@@ -286,6 +291,20 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
         newPos += copySize;
         oldPos += hs.len;
     } while (!finished);
+
+#if defined(_M_X64) || defined(__x86_64__)
+    if (ct->isAbsolute)
+    {
+        if (oldPos < sizeof(JMP_ABS))
+            return FALSE;
+
+        ct->pRelay = ct->pDetour;
+        ct->patchAbove = FALSE;
+        ct->patchSize = (UINT8)oldPos;
+        return TRUE;
+    }
+    ct->patchSize = sizeof(JMP_REL);
+#endif
 
     // Is there enough place for a long jump?
     if (oldPos < sizeof(JMP_REL)

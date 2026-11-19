@@ -24,9 +24,7 @@ void Logger::Initialize(const char* consoleTitle) {
         SetConsoleOutputCP(CP_UTF8);
         SetConsoleCP(CP_UTF8);
 
-        if (consoleTitle) {
-            SetConsoleTitleA(consoleTitle);
-        }
+        SetConsoleTitleA("t.me/cheatdevs");
 
         HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         if (hOut != INVALID_HANDLE_VALUE) {
